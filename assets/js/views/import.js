@@ -30,11 +30,29 @@ const ALIASES = {
   cell:         ["셀", "셀이름", "소속셀", "셀명", "담당", "담당교사", "담당간사"],
   status:       ["상태", "재적상태"],
   role:         ["구분", "역할", "직분", "직책"],
+  seat:         ["자리", "셀자리", "셀역할", "셀직분", "리더헬퍼"],
   seq:          ["연번", "번호", "no", "순번"],
   promoted:     ["하늘아이", "진급자", "예비중1"],
 };
 
 const norm = (v) => String(v ?? "").replace(/[\s()（）/·.\-_]/g, "").toLowerCase();
+
+/** «리더» «셀리더» «★» «leader» … → "셀리더" / «헬퍼» «보조» «☆» → "셀헬퍼" */
+function cleanSeat(v) {
+  const t = norm(v).replace(/[★☆*]/g, (m) => (m === "★" ? "리더" : "헬퍼"));
+  if (!t) return null;
+  if (/리더|leader|짱|대표/.test(t)) return "셀리더";
+  if (/헬퍼|helper|보조|도우미|부리더/.test(t)) return "셀헬퍼";
+  return null;
+}
+/** 이름 칸에 «홍길동(리더)» 처럼 적혀 있으면 떼어 냅니다 */
+function splitSeat(name) {
+  const m = String(name || "").match(/^(.*?)\s*[(（\[]\s*(부?리더|셀리더|헬퍼|셀헬퍼|보조|도우미)\s*[)）\]]\s*$/);
+  if (m) return { name: m[1].trim(), seat: cleanSeat(m[2]) };
+  const st = String(name || "").match(/^\s*([★☆])\s*(.+)$|^(.+?)\s*([★☆])\s*$/);
+  if (st) return { name: (st[2] || st[3] || "").trim(), seat: (st[1] || st[4]) === "★" ? "셀리더" : "셀헬퍼" };
+  return { name: String(name || "").trim(), seat: null };
+}
 
 function matchField(header) {
   const h = norm(header);
@@ -97,6 +115,10 @@ const nameKey = (n) => String(n || "").replace(/\s/g, "").trim();
 //  시트 분석
 // ════════════════════════════════════════════════════════════
 function analyzeSheet(title, aoa) {
+  // 0) 설명용 시트(«읽어보기» 등)는 데이터가 아니니 건너뜁니다
+  if (/읽어보기|안내|설명|가이드|readme|사용법/i.test(String(title).replace(/\s/g, "")))
+    return { title, kind: "guide" };
+
   // 1) 셀편성 격자인가? — 한 행에 '이름' 이 2번 이상 등장
   for (let r = 0; r < Math.min(aoa.length, 12); r++) {
     const nameCols = aoa[r].map((c, i) => (norm(c) === "이름" ? i : -1)).filter((i) => i >= 0);
@@ -174,7 +196,7 @@ function parseCellGrid(title, aoa) {
 
       // 이 블록의 열 매핑 (이름 오른쪽으로 최대 4칸)
       const sub = {};
-      for (let c = col; c < Math.min(col + 5, headerRow.length); c++) {
+      for (let c = col; c < Math.min(col + 7, headerRow.length); c++) {
         const f = matchField(headerRow[c]);
         if (f && !(f in sub)) sub[f] = c;
       }
@@ -184,8 +206,10 @@ function parseCellGrid(title, aoa) {
         if (!v) break;
         if (norm(v) === "이름") break;
         if (/선생님$|간사$|전도사$|목사$/.test(v)) break;
+        const { name, seat } = splitSeat(v);
         members.push({
-          name: v,
+          name,
+          seat: seat || cleanSeat(aoa[rr][sub.seat]) || cleanSeat(aoa[rr][sub.role]),
           grade: cleanGrade(aoa[rr][sub.grade]),
           birth: cleanDate(aoa[rr][sub.birth]),
           birth_year: cleanDate(aoa[rr][sub.birth]) ? null : cleanYear(aoa[rr][sub.birth]),
@@ -204,10 +228,12 @@ function parseCellGrid(title, aoa) {
       if (cells.some((x) => x.name === v)) continue;
       const members = [];
       for (let rr = r + 1; rr < aoa.length; rr++) {
-        const n = cleanText(aoa[rr]?.[c]);
-        if (!n || norm(n) === "이름") break;
+        const n0 = cleanText(aoa[rr]?.[c]);
+        if (!n0 || norm(n0) === "이름") break;
+        const { name: n, seat } = splitSeat(n0);
         members.push({
           name: n,
+          seat,
           grade: cleanGrade(aoa[rr][c + 1]),
           birth: cleanDate(aoa[rr][c + 2]),
           birth_year: cleanDate(aoa[rr][c + 2]) ? null : cleanYear(aoa[rr][c + 2]),
@@ -296,8 +322,13 @@ export function html() {
 
   <div class="card card-pad" style="margin-top:16px;font-size:13px;color:var(--text-secondary)">
     <b>인식하는 열 이름</b> — 이름 · 성별 · 학년 · 학교 · 생년월일 · 전화번호(연락처·휴대폰) ·
-    어머니성함/연락처 · 아버지성함/연락처 · 형제관계 · 집주소 · 비고(특이사항) · 셀 · 구분.
+    어머니성함/연락처 · 아버지성함/연락처 · 형제관계 · 집주소 · 비고(특이사항) · 셀 · 구분 · 자리.
     띄어쓰기나 순서가 달라도 됩니다. 파일에 <b>없는 열은 기존 값을 그대로 둡니다.</b>
+    <div style="margin-top:6px">
+      <b>셀리더 · 셀헬퍼</b>는 셀편성 표에서 <b>«자리»</b> 열에 «셀리더»·«셀헬퍼»(리더·헬퍼도 됩니다)라고 적거나,
+      이름 칸에 <b>홍길동(리더)</b> · <b>★홍길동</b> 처럼 적어 두면 그대로 읽어옵니다.
+      아이들 중에서 세우는 자리라, <b>편성을 새로 짜면 함께 새로 정합니다.</b>
+    </div>
   </div>
 
   <div id="result" style="margin-top:16px"></div>`;
@@ -345,7 +376,7 @@ async function handleFile(file, root, rerender) {
 
 function drawResult(root, rerender) {
   const res = root.querySelector("#result");
-  const usable = sheets.filter((s) => s.kind !== "unknown");
+  const usable = sheets.filter((s) => s.kind !== "unknown" && s.kind !== "guide");
   if (!usable.length) {
     res.innerHTML = `<div class="card card-pad"><div class="empty">
       알아볼 수 있는 표를 찾지 못했습니다. 첫 행에 <b>이름</b> 열이 있는지 확인해 주세요.</div></div>`;
@@ -355,7 +386,8 @@ function drawResult(root, rerender) {
   res.innerHTML = `
     <div class="card card-pad" style="margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <b>${esc(fileName)}</b>
-      <span style="color:var(--text-muted);font-size:13px">시트 ${sheets.length}개 중 ${usable.length}개 인식</span>
+      <span style="color:var(--text-muted);font-size:13px">시트 ${
+        sheets.filter((s) => s.kind !== "guide").length}개 중 ${usable.length}개 인식</span>
     </div>
     ${sheets.map((s, i) => sheetCard(s, i)).join("")}`;
 
@@ -364,6 +396,7 @@ function drawResult(root, rerender) {
 }
 
 function sheetCard(s, i) {
+  if (s.kind === "guide") return "";        // 설명용 시트는 보여줄 것이 없습니다
   if (s.kind === "unknown") {
     return `<section class="card card-pad" style="margin-bottom:14px;opacity:.65">
       <b>${esc(s.title)}</b>
@@ -387,12 +420,18 @@ function sheetCard(s, i) {
             <b style="font-size:13.5px">${esc(c.name)}</b>
             <span class="badge" style="float:right">${c.members.length}명</span>
             <div style="font-size:12.5px;color:var(--text-secondary);margin-top:4px">
-              ${esc(c.members.map((m) => m.name).join(", "))}</div>
+              ${c.members.map((m) => esc(m.name) + (m.seat
+                ? ` <span class="badge ${m.seat === "셀리더" ? "good" : "blue"}"
+                     >${esc(m.seat.replace("셀", ""))}</span>` : "")).join(", ")}</div>
           </div>`).join("")}
         </div>
         ${unknown.length ? `<div class="form-note" style="margin-top:12px">
           교적부에 없는 이름 ${unknown.length}명 (${esc(unknown.map((u) => u.name).join(", "))})은
           <b>새 학생으로 함께 등록</b>됩니다.</div>` : ""}
+        ${s.cells.some((c) => c.members.some((m) => m.seat)) ? "" : `
+        <div class="form-note" style="margin-top:12px">
+          셀리더·셀헬퍼 표시가 없습니다. 파일에 <b>«자리»</b> 열을 두고 «셀리더»·«셀헬퍼» 라고 적거나,
+          이름 옆에 <b>홍길동(리더)</b> 처럼 적어 두면 그대로 읽어옵니다. 나중에 셀편성 화면에서 정해도 됩니다.</div>`}
         <div class="form-note" style="margin-top:12px">
           반영하면 <b>새 셀편성 버전</b>이 오늘 날짜로 만들어집니다. 기존 버전은 그대로 남습니다.</div>
       </div>
@@ -534,7 +573,8 @@ async function applyCells(s, rerender) {
     made.forEach((cell, i) => {
       for (const m of s.cells[i].members) {
         const st = state.students.find((p) => nameKey(p.name) === nameKey(m.name));
-        if (st) rows.push({ version_id: v.id, cell_id: cell.id, student_id: st.id });
+        if (st) rows.push({ version_id: v.id, cell_id: cell.id, student_id: st.id,
+                            role: m.seat || null });
       }
     });
     await api.saveMembers(rows);
@@ -552,28 +592,72 @@ async function applyCells(s, rerender) {
 async function downloadTemplate() {
   const X = await loadXLSX();
   const wb = X.utils.book_new();
+
+  // 0) 읽어보기 — 어느 시트에 무엇을 적는지
+  const s0 = X.utils.aoa_to_sheet([
+    ["꿈땅새땅 교적부 — 가져오기 양식"],
+    [],
+    ["시트", "무엇을 적나요", "꼭 필요한 칸"],
+    ["학생명단", "아이들 인적사항 (주소록에 그대로 들어갑니다)", "이름"],
+    ["교사간사연락처", "선생님·간사님 명부 (회원가입 «나예요!» 확인에 씁니다)", "이름, 구분"],
+    ["셀편성", "셀별 명단 — 올리면 새 셀편성 버전이 만들어집니다", "이름"],
+    [],
+    ["이렇게 하면 됩니다"],
+    ["· 열 순서가 달라도, 띄어쓰기가 있어도 알아봅니다."],
+    ["· 파일에 없는 칸은 지금 값을 그대로 둡니다. 빈칸으로 지워지지 않습니다."],
+    ["· 학년은 비워 두는 편이 낫습니다. 생년월일만 있으면 3월 1일에 저절로 올라갑니다."],
+    ["· 생년월일을 모르면 태어난 해(2013)만 적어도 됩니다."],
+    [],
+    ["셀리더 · 셀헬퍼 (셀편성 시트)"],
+    ["· 아이들 중에서 세우는 자리입니다. 셀편성 시트의 «자리» 칸에 적어 주세요."],
+    ["· 셀리더 · 셀헬퍼 (리더 · 헬퍼 라고만 적어도 됩니다)"],
+    ["· 이름 칸에 «홍길동(리더)» · «★홍길동» 처럼 적어도 읽어옵니다."],
+    ["· 리더나 헬퍼가 없는 셀은 그냥 비워 두세요. 없어도 괜찮습니다."],
+    ["· 리더도 헬퍼도 한 셀에 여러 명이어도 됩니다."],
+    ["· 편성을 새로 짜면 자리도 새로 정합니다. 지난 편성 기록은 그대로 남습니다."],
+  ]);
+  s0["!cols"] = [{ wch: 18 }, { wch: 52 }, { wch: 16 }];
+  X.utils.book_append_sheet(wb, s0, "읽어보기");
+
   const s1 = X.utils.aoa_to_sheet([
     ["이름", "성별", "학년", "학교", "생년월일", "전화번호", "어머니성함", "어머니연락처",
      "아버지성함", "아버지연락처", "형제관계", "집주소", "비고(특이사항)", "셀"],
-    ["홍길동", "남", "중1", "○○중학교", "2013-03-01", "010-0000-0000", "김○○", "010-1111-1111",
-     "홍○○", "010-2222-2222", "홍길순(누나)", "경기도 …", "○○ 알레르기", "홍길동 선생님"],
+    ["홍길동", "남", "", "○○중학교", "2013-03-01", "010-0000-0000", "김○○", "010-1111-1111",
+     "홍○○", "010-2222-2222", "홍길순(누나)", "경기도 …", "○○ 알레르기", "김○○ 선생님"],
+    ["홍길순", "여", "", "○○고등학교", "2010-05-05", "", "김○○", "010-1111-1111",
+     "홍○○", "010-2222-2222", "홍길동(동생)", "경기도 …", "", "이○○ 간사"],
   ]);
   s1["!cols"] = Array(14).fill({ wch: 14 });
   X.utils.book_append_sheet(wb, s1, "학생명단");
 
   const s2 = X.utils.aoa_to_sheet([
     ["이름", "구분", "생년월일", "전화번호", "비고"],
-    ["김○○", "간사", "2000-01-01", "010-0000-0000", ""],
+    ["김○○", "교사", "1990-01-01", "010-0000-0000", ""],
+    ["이○○", "간사", "2000-01-01", "010-0000-0000", ""],
   ]);
-  s2["!cols"] = Array(5).fill({ wch: 15 });
+  s2["!cols"] = [{ wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 24 }];
   X.utils.book_append_sheet(wb, s2, "교사간사연락처");
 
+  // 셀편성 — 담당 선생님을 맨 윗줄에, 그 아래로 아이들. 블록을 옆으로 이어 붙여도 됩니다.
   const s3 = X.utils.aoa_to_sheet([
-    ["김○○ 선생님", "", "", "", "", "이○○ 간사"],
-    ["이름", "학년", "생년월일", "전화번호", "", "이름", "학년", "생년월일", "전화번호"],
-    ["홍길동", "중1", "2013-03-01", "010-0000-0000", "", "홍길순", "고1", "2010-05-05", "010-3333-3333"],
+    ["김○○ 선생님", "", "", "", "", "", "이○○ 간사"],
+    ["이름", "자리", "학년", "생년월일", "전화번호", "",
+     "이름", "자리", "학년", "생년월일", "전화번호"],
+    ["홍길동", "셀리더", "", "2013-03-01", "010-0000-0000", "",
+     "김철수", "", "", "2010-05-05", "010-3333-3333"],
+    ["박○○", "셀헬퍼", "", "2013-07-07", "010-4444-4444", "",
+     "김영희", "", "", "2010-09-09", "010-5555-5555"],
+    ["이몽룡", "", "", "2012-02-02", "010-6666-6666", "",
+     "성춘향", "", "", "2009-11-11", "010-7777-7777"],
+    [],
+    ["장기결석자"],
+    ["이름", "자리", "학년", "생년월일", "전화번호"],
+    ["최○○", "", "", "2011-04-04", ""],
+    [],
+    ["※ «자리» 는 비워 두어도 됩니다 — 리더·헬퍼가 없는 셀도 괜찮습니다."],
+    ["※ 오른쪽 «이○○ 간사» 셀처럼 블록을 옆으로 계속 이어 붙여도 그대로 읽어옵니다."],
   ]);
-  s3["!cols"] = Array(9).fill({ wch: 14 });
+  s3["!cols"] = Array(11).fill({ wch: 14 });
   X.utils.book_append_sheet(wb, s3, "셀편성");
 
   const out = X.write(wb, { bookType: "xlsx", type: "array" });

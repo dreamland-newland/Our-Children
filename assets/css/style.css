@@ -74,7 +74,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
   display: flex; align-items: center; gap: 18px;
 }
 .brand { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
-.brand-mark { font-size: 22px; line-height: 1; }
+.brand-mark { width: 30px; height: 30px; object-fit: contain; display: block; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
 .brand-text b { font-size: 15px; letter-spacing: -.02em; }
 .brand-text small { font-size: 11px; color: var(--text-muted); }
@@ -597,3 +597,72 @@ a.tel { color: var(--series-1); }
 .crop-frame .hd.sw { left: -2px;  bottom: -2px; border-right: 0; border-top: 0;    cursor: nesw-resize; }
 .crop-frame .hd.se { right: -2px; bottom: -2px; border-left: 0;  border-top: 0;    cursor: nwse-resize; }
 .crop-tools { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+
+/* ── 홈 화면에 추가 안내 배너 ───────────────────────────── */
+.install-bar {
+  position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 70;
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 12px; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .22);
+  opacity: 0; transform: translateY(14px);
+  transition: opacity .2s ease, transform .2s ease;
+}
+.install-bar.on { opacity: 1; transform: none; }
+@media (min-width: 620px) { .install-bar { left: auto; right: 16px; width: 420px; } }
+@supports (padding: env(safe-area-inset-bottom)) {
+  .install-bar { bottom: calc(12px + env(safe-area-inset-bottom)); }
+}
+.install-bar .ib-icon {
+  width: 42px; height: 42px; border-radius: 10px; flex: none;
+  border: 1px solid var(--border);
+}
+.install-bar .ib-text { min-width: 0; flex: 1; line-height: 1.35; }
+.install-bar .ib-text b { display: block; font-size: 13.5px; font-weight: 640; }
+.install-bar .ib-text span { font-size: 12px; color: var(--text-secondary); }
+.install-bar .ib-steps { display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.install-bar .ib-share {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 6px; vertical-align: middle;
+  color: #fff; background: #0a84ff;
+}
+.install-bar .ib-x { flex: none; width: 28px; height: 28px; font-size: 13px; align-self: flex-start; }
+/* 아이폰 공유 버튼(화면 아래) 을 가리키는 화살표 */
+.install-bar .ib-arrow {
+  position: absolute; left: 50%; bottom: -17px; transform: translateX(-50%);
+  font-size: 19px; line-height: 1; color: var(--border-strong);
+  animation: ibBob 1.4s ease-in-out infinite;
+}
+@keyframes ibBob {
+  0%, 100% { transform: translate(-50%, 0); }
+  50%      { transform: translate(-50%, 4px); }
+}
+
+/* ── 셀 안에서 맡은 자리 (셀리더 · 셀헬퍼) ────────────────── */
+.seat-pick { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.seat-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-bottom: 1px solid var(--grid);
+}
+.seat-row:last-child { border-bottom: 0; }
+.seat-name { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.seat-name b { font-size: 14px; font-weight: 620; }
+.seat-sub { font-size: 11.5px; color: var(--text-muted); }
+.seat-btns { display: flex; gap: 6px; flex: none; }
+.seat-pill {
+  padding: 5px 13px; border-radius: 999px; cursor: pointer; font: inherit;
+  font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
+  transition: background .12s, color .12s, border-color .12s;
+}
+.seat-pill:hover { border-color: var(--border-strong); color: var(--text-secondary); }
+.seat-pill.lead.on {
+  background: color-mix(in srgb, var(--good) 16%, var(--surface));
+  border-color: color-mix(in srgb, var(--good) 38%, transparent);
+  color: var(--good);
+}
+.seat-pill.help.on {
+  background: color-mix(in srgb, var(--series-1) 16%, var(--surface));
+  border-color: color-mix(in srgb, var(--series-1) 38%, transparent);
+  color: var(--series-1);
+}

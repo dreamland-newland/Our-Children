@@ -3,7 +3,7 @@
 //  원본 출석부와 같은 5개 시트 구조로 통째 내려받습니다.
 // ============================================================
 import {
-  state, birthdayList, versionCells, currentVersion, cellMembers, cellNameOf,
+  state, birthdayList, versionCells, currentVersion, cellMembers, cellNameOf, cellRoleOf, roleRank,
   birthYearOf,
   gradeOf, statusOf, isGraduated,
 } from "./data.js";
@@ -79,16 +79,21 @@ export async function exportWorkbook() {
     for (let i = 0; i < cs.length; i += 4) {
       const group = cs.slice(i, i + 4);
       const head = [], sub = [];
-      for (const c of group) { head.push(c.name, "", "", "", ""); sub.push("이름", "학년", "생년월일", "전화번호", ""); }
+      for (const c of group) {
+        head.push(c.name, "", "", "", "", "");
+        sub.push("이름", "자리", "학년", "생년월일", "전화번호", "");
+      }
       grid.push(head, sub);
       const lists = group.map((c) => cellMembers(c.id).filter((s) => !latest || !isGraduated(s))
-        .sort((a, b) => gr(a) - gr(b) || a.name.localeCompare(b.name, "ko")));
+        .sort((a, b) => roleRank(cellRoleOf(a.id)) - roleRank(cellRoleOf(b.id))
+          || gr(a) - gr(b) || a.name.localeCompare(b.name, "ko")));
       const depth = Math.max(...lists.map((l) => l.length), 0);
       for (let r = 0; r < depth; r++) {
         const line = [];
         for (const l of lists) {
           const s = l[r];
-          line.push(s ? s.name : "", s ? gradeOf(s) || "" : "", s ? birthCell(s) : "", s ? s.phone || "" : "", "");
+          line.push(s ? s.name : "", s ? cellRoleOf(s.id) || "" : "",
+                    s ? gradeOf(s) || "" : "", s ? birthCell(s) : "", s ? s.phone || "" : "", "");
         }
         grid.push(line);
       }
@@ -136,19 +141,20 @@ export async function exportCurrentVersion() {
     const rows = [
       [`${v.label} 셀편성`, `등록일 ${v.created_at.slice(0, 10)}`, v.note || ""],
       [],
-      ["셀", "담당", "이름", "학년", "생년월일", "전화번호"],
+      ["셀", "담당", "이름", "자리", "학년", "생년월일", "전화번호"],
     ];
     for (const c of versionCells(v.id)) {
       const ms = [...cellMembers(c.id)]
-        .sort((a, b) => gr(a) - gr(b) || a.name.localeCompare(b.name, "ko"));
+        .sort((a, b) => roleRank(cellRoleOf(a.id)) - roleRank(cellRoleOf(b.id))
+          || gr(a) - gr(b) || a.name.localeCompare(b.name, "ko"));
       if (!ms.length) { rows.push([c.name, (c.leaders || []).join(", "), "(없음)"]); continue; }
       ms.forEach((s, i) => rows.push([
         i === 0 ? c.name : "", i === 0 ? (c.leaders || []).join(", ") : "",
-        s.name, gradeOf(s) || "", birthCell(s), s.phone || "",
+        s.name, cellRoleOf(s.id) || "", gradeOf(s) || "", birthCell(s), s.phone || "",
       ]));
       rows.push([]);
     }
-    add(X, wb, v.label.slice(0, 28), rows, [22, 16, 10, 8, 12, 15]);
+    add(X, wb, v.label.slice(0, 28), rows, [22, 16, 10, 8, 8, 12, 15]);
     saveWorkbook(X, wb, `${GROUP_NAME}_셀편성_${v.label}_${v.created_at.slice(0, 10)}.xlsx`);
     toast("셀편성을 내려받았습니다.");
   } catch (e) {

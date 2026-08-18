@@ -5,6 +5,7 @@
 import {
   state, api, isLoggedIn, isAdmin, versionCells, currentVersion,
   versionLabel, cellMembers, cellIdOf, photoOf, uid, gradeOf, gradeWithYear, statusOf, isActive, isGraduated,
+  cellRoleOf, roleRank,
 } from "../data.js";
 import { esc, modal, toast, confirmDialog, avatar } from "../ui.js";
 import { DEFAULT_TERM_LABEL } from "../config.js";
@@ -18,11 +19,12 @@ let draft = null;
 const HISTORY_MAX = 30;
 let past = [];     // 이전 상태 스냅샷
 let future = [];   // 되돌린 뒤의 상태 스냅샷
-const snapshot = () => JSON.stringify({ cells: draft.cells, assign: draft.assign,
+const snapshot = () => JSON.stringify({ cells: draft.cells, assign: draft.assign, roles: draft.roles,
                                         label: draft.label, note: draft.note });
 const restore = (snap) => {
   const o = JSON.parse(snap);
-  draft.cells = o.cells; draft.assign = o.assign; draft.label = o.label; draft.note = o.note;
+  draft.cells = o.cells; draft.assign = o.assign; draft.roles = o.roles || {};
+  draft.label = o.label; draft.note = o.note;
 };
 
 /** 초안을 바꾸기 "직전"에 호출 — 현재 상태를 되돌리기 스택에 쌓습니다. */
@@ -98,7 +100,7 @@ function saveSlot() {
     name: `모의 ${n}차 (${d.getMonth() + 1}/${d.getDate()})`,
     savedAt: d.toISOString(),
     base: draft.base, label: draft.label, note: draft.note,
-    cells: draft.cells, assign: draft.assign, orig: draft.orig || {},
+    cells: draft.cells, assign: draft.assign, roles: draft.roles || {}, orig: draft.orig || {},
   };
   writeSlots([item, ...list]);
   return item;
@@ -107,7 +109,7 @@ function loadSlot(id) {
   const it = readSlots().find((x) => x.id === id);
   if (!it) return false;
   draft = { base: it.base ?? null, label: it.label || DEFAULT_TERM_LABEL, note: it.note || "",
-            cells: it.cells, assign: it.assign || {}, orig: it.orig || {} };
+            cells: it.cells, assign: it.assign || {}, roles: it.roles || {}, orig: it.orig || {} };
   past = []; future = [];
   keepDraft();
   return true;
@@ -152,7 +154,7 @@ function resumeDraft() {
   const o = storedDraft();
   if (!o) return false;
   draft = { base: o.base ?? null, label: o.label || DEFAULT_TERM_LABEL, note: o.note || "",
-            cells: o.cells, assign: o.assign || {}, orig: o.orig || {} };
+            cells: o.cells, assign: o.assign || {}, roles: o.roles || {}, orig: o.orig || {} };
   past = []; future = [];
   return true;
 }
@@ -254,9 +256,12 @@ function startDraft() {
       kind: c.kind, sort_order: c.sort_order,
     })),
     assign: {},
+    roles: {},
   };
-  if (v) for (const m of state.members.filter((x) => x.version_id === v.id))
+  if (v) for (const m of state.members.filter((x) => x.version_id === v.id)) {
     draft.assign[m.student_id] = m.cell_id;
+    if (m.role) draft.roles[m.student_id] = m.role;
+  }
   draft.orig = { ...draft.assign };      // 지난 버전과 비교해 «옮겨진 아이» 를 표시하려고
   past = []; future = [];
   keepDraft();
@@ -428,10 +433,36 @@ function editHtml() {
   <div style="margin-top:16px">${slotsCard()}</div>`;
 }
 
+/** 셀 이름에 이미 들어 있는 담당자는 아래에 또 적지 않습니다
+ *  («홍길동 선생님» 셀이면 «홍길동» 을 되풀이하지 않습니다) */
+const extraLeaders = (c) =>
+  (c.leaders || []).filter((n) => n && !nk(c.name).includes(nk(n)));
+
+/** 셀 이름 아래 잔글씨 — 이름에 없는 담당자 · 셀리더 · 셀헬퍼 */
+function cellSub(c, members, editing) {
+  const who = (seat) => members.filter((s) => seatOf(s.id, editing) === seat).map((s) => s.name);
+  const lead = who("셀리더"), help = who("셀헬퍼");
+  return [
+    extraLeaders(c).join(" · "),
+    lead.length ? `리더 ${lead.join("·")}` : "",
+    help.length ? `헬퍼 ${help.join("·")}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+/** 셀 안에서 맡은 자리 — 편집 중이면 초안에서, 아니면 저장된 편성에서 */
+const seatOf = (sid, editing) =>
+  (editing ? (draft?.roles?.[sid] || null) : cellRoleOf(sid));
+/** «셀리더» → «리더» 처럼 짧게 */
+const seatBadge = (seat) => (seat
+  ? `<span class="badge ${seat === "셀리더" ? "good" : "blue"}"
+       title="${esc(seat)}">${esc(seat.replace("셀", ""))}</span>` : "");
+
 function cellCard(c, members, editing) {
   const special = c.kind !== "셀";
   members = [...members].sort(
-    (a, b) => gradeRank(gradeOf(a)) - gradeRank(gradeOf(b)) || a.name.localeCompare(b.name, "ko"));
+    (a, b) => roleRank(seatOf(a.id, editing)) - roleRank(seatOf(b.id, editing))
+      || gradeRank(gradeOf(a)) - gradeRank(gradeOf(b))
+      || a.name.localeCompare(b.name, "ko"));
   const stats = editing && members.length ? cellStats(members) : "";
   return `
   <section class="card cell-card${editing ? " droppable" : ""}${isMyCell(c) ? " mine" : ""}"
@@ -439,8 +470,8 @@ function cellCard(c, members, editing) {
     <div class="cell-top">
       <div style="min-width:0">
         <h4>${esc(c.name)}</h4>
-        ${c.leaders?.length
-          ? `<div style="font-size:12px;color:var(--text-muted)">${esc(c.leaders.join(" · "))}</div>` : ""}
+        ${cellSub(c, members, editing)
+          ? `<div style="font-size:12px;color:var(--text-muted)">${esc(cellSub(c, members, editing))}</div>` : ""}
         ${stats ? `<div class="cell-stats">${esc(stats)}</div>` : ""}
       </div>
       <span style="display:flex;gap:5px;align-items:center;flex:0 0 auto">
@@ -455,6 +486,8 @@ function cellCard(c, members, editing) {
     ${editing && c.key !== "__none" ? `
       <div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" data-add-member="${c.key}">＋ 학생 배정</button>
+        ${members.length ? `<button class="btn btn-ghost btn-sm" data-seats="${c.key}"
+          title="이 셀의 셀리더·셀헬퍼를 정합니다">🙋 리더·헬퍼</button>` : ""}
         <button class="btn btn-ghost btn-sm" data-edit-cell="${c.key}">이름 편집</button>
         <button class="btn btn-ghost btn-sm btn-danger" data-del-cell="${c.key}">셀 삭제</button>
       </div>` : ""}
@@ -468,11 +501,13 @@ function studentRow(s, editing) {
     <li data-student="${s.id}">
       ${avatar(s.name, photoOf(s.id), 22)}
       <span>${esc(s.name)}</span>
+      ${seatBadge(seatOf(s.id, false))}
       ${s.is_promoted ? '<span class="badge blue" title="초등부 하늘아이에서 올라온 아이">하늘아이</span>' : ""}
       <span class="g"${gradeOf(s) ? ` title="${esc(gradeWithYear(s))}"` : ""}>${esc(gradeOf(s) || "")}</span>
     </li>`;
   }
   const sibs = siblingsOf(s.id);
+  const seat = seatOf(s.id, true);
   const moved = draft && (draft.orig?.[s.id] ?? null) !== (draft.assign[s.id] ?? null);
   // 한 줄에 다 들어가도록 배지 대신 잔글씨로 (마우스를 올리면 자세한 설명이 뜹니다)
   const meta = [
@@ -488,6 +523,7 @@ function studentRow(s, editing) {
     <div class="who">
       <div class="line1">
         <b>${esc(s.name)}</b>
+        ${seatBadge(seat)}
         ${moved ? '<span class="badge orange" title="지난 편성에서 옮겨졌습니다">이동</span>' : ""}
       </div>
       ${meta ? `<div class="line2" title="${esc(meta)}">${esc(meta)}</div>` : ""}
@@ -591,6 +627,9 @@ export function mount(root, rerender) {
     e.stopPropagation();
     moveStudent(state.students.find((s) => s.id === b.dataset.move), rerender);
   }));
+  // 셀 단위로 리더·헬퍼 정하기
+  root.querySelectorAll("[data-seats]").forEach((b) => b.addEventListener("click", () =>
+    editSeats(b.dataset.seats, rerender)));
   root.querySelectorAll("[data-add-member]").forEach((b) => b.addEventListener("click", () =>
     addMembers(b.dataset.addMember, rerender)));
   root.querySelectorAll("[data-edit-cell]").forEach((b) => b.addEventListener("click", () =>
@@ -744,7 +783,8 @@ function saveDraft(after) {
 
           const rows = Object.entries(draft.assign)
             .filter(([, k]) => k && keyToId[k])
-            .map(([sid, k]) => ({ version_id: versionId, cell_id: keyToId[k], student_id: sid }));
+            .map(([sid, k]) => ({ version_id: versionId, cell_id: keyToId[k], student_id: sid,
+                                  role: draft.roles?.[sid] || null }));
           await api.saveMembers(rows);
 
           await api.refresh();
@@ -853,7 +893,8 @@ function restoreVersion(after) {
           src.forEach((c, i) => { map[c.id] = made[i].id; });
           const rows = state.members
             .filter((m) => m.version_id === v.id && map[m.cell_id])
-            .map((m) => ({ version_id: nv.id, cell_id: map[m.cell_id], student_id: m.student_id }));
+            .map((m) => ({ version_id: nv.id, cell_id: map[m.cell_id], student_id: m.student_id,
+                           role: m.role || null }));
           await api.saveMembers(rows);
           await api.refresh();
           state.versionId = nv.id;
@@ -960,6 +1001,86 @@ export function moveStudent(s, after) {
         keepDraft();
         close();
         if (location.hash !== "#/cells") location.hash = "#/cells"; else after?.();
+      });
+    },
+  });
+}
+
+/** 셀 하나의 셀리더·셀헬퍼를 한 화면에서 정합니다 (여러 명 가능) */
+function editSeats(cellKey, after) {
+  if (!draft) return;
+  const cell = draft.cells.find((c) => c.key === cellKey);
+  const members = dMembers(cellKey)
+    .sort((a, b) => gradeRank(gradeOf(a)) - gradeRank(gradeOf(b)) || a.name.localeCompare(b.name, "ko"));
+  if (!members.length) return toast("이 셀에는 아직 아이가 없습니다.", "err");
+
+  // 창을 닫을 때까지는 여기서만 바뀝니다
+  const pick = {};
+  for (const s of members) pick[s.id] = draft.roles?.[s.id] || null;
+
+  const box = document.createElement("div");
+  const draw = () => {
+    const lead = members.filter((s) => pick[s.id] === "셀리더");
+    const help = members.filter((s) => pick[s.id] === "셀헬퍼");
+    box.innerHTML = `
+      <div class="form-note" style="margin:0 0 12px">
+        이름 오른쪽에서 <b>리더</b> 나 <b>헬퍼</b> 를 누르세요. 한 번 더 누르면 풀립니다.
+        <b>여러 명이어도 되고, 아무도 없어도 됩니다.</b>
+      </div>
+      <div class="seat-pick">
+        ${members.map((s) => `
+        <div class="seat-row">
+          ${avatar(s.name, photoOf(s.id), 28)}
+          <span class="seat-name">
+            <b>${esc(s.name)}</b>
+            <span class="seat-sub">${esc([gradeOf(s), s.gender, shortSchool(s.school)]
+              .filter(Boolean).join(" · "))}</span>
+          </span>
+          <span class="seat-btns">
+            <button type="button" class="seat-pill lead${pick[s.id] === "셀리더" ? " on" : ""}"
+              data-pick="${s.id}" data-role="셀리더">리더</button>
+            <button type="button" class="seat-pill help${pick[s.id] === "셀헬퍼" ? " on" : ""}"
+              data-pick="${s.id}" data-role="셀헬퍼">헬퍼</button>
+          </span>
+        </div>`).join("")}
+      </div>
+      <div class="form-note" style="margin:12px 0 0">
+        ${lead.length || help.length
+          ? `${lead.length ? `<b>리더</b> ${esc(lead.map((s) => s.name).join(" · "))}` : "리더 없음"}
+             &nbsp;|&nbsp;
+             ${help.length ? `<b>헬퍼</b> ${esc(help.map((s) => s.name).join(" · "))}` : "헬퍼 없음"}`
+          : "아직 아무도 정하지 않았습니다. 이대로 두어도 괜찮습니다."}
+      </div>`;
+    box.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => {
+      const id = b.dataset.pick;
+      pick[id] = pick[id] === b.dataset.role ? null : b.dataset.role;   // 같은 걸 또 누르면 해제
+      draw();
+    }));
+  };
+  draw();
+
+  modal({
+    title: `${cell?.name || "셀"} — 리더 · 헬퍼 정하기`,
+    narrow: true,
+    body: box,
+    footer: `<button class="btn btn-danger" data-clear>모두 없음</button>
+             <div style="flex:1"></div>
+             <button class="btn" data-close>취소</button>
+             <button class="btn btn-primary" data-ok>확인</button>`,
+    onMount(b, close) {
+      b.querySelector("[data-clear]").addEventListener("click", () => {
+        for (const id of Object.keys(pick)) pick[id] = null;
+        draw();
+      });
+      b.querySelector("[data-ok]").addEventListener("click", () => {
+        pushHistory();
+        draft.roles = { ...(draft.roles || {}) };
+        for (const [id, v] of Object.entries(pick)) {
+          if (v) draft.roles[id] = v; else delete draft.roles[id];
+        }
+        keepDraft();
+        close();
+        after?.();
       });
     },
   });

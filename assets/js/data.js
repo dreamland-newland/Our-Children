@@ -17,7 +17,7 @@ export const state = {
   teachers: [],
   versions: [],          // 셀편성 버전 (최신순)
   cells: [],             // 모든 버전의 셀
-  members: [],           // { version_id, cell_id, student_id }
+  members: [],           // { version_id, cell_id, student_id, role }
   versionId: null,       // 화면에서 보고 있는 버전
   profile: null,         // 승인된 로그인 사용자
   pending: null,         // 승인 대기 중인 신청 (로그인은 안 된 상태)
@@ -137,7 +137,7 @@ const supabaseAdapter = {
     const [v, c, m, t, s] = await Promise.all([
       sb.from("cell_versions").select("*").order("created_at", { ascending: false }),
       sb.from("cells").select("*").order("sort_order"),
-      sb.from("cell_members").select("id,version_id,cell_id,student_id"),
+      sb.from("cell_members").select("id,version_id,cell_id,student_id,role"),
       // 교사 전화번호는 «전부 공개» 설정에서도 로그인해야 받아옵니다(계정 사칭 방지)
       sb.from("teachers").select(isLoggedIn() ? "*" : PUBLIC_TEACHER_COLS).order("seq"),
       sb.from("students").select(limited ? PUBLIC_STUDENT_COLS : "*").order("seq"),
@@ -678,6 +678,14 @@ export const cellMembers = (cellId) =>
   state.members.filter((m) => m.cell_id === cellId)
     .map((m) => state.students.find((s) => s.id === m.student_id))
     .filter(Boolean);
+
+/** 셀 안에서 맡은 자리 — "셀리더" · "셀헬퍼" · null (편성 버전마다 다릅니다) */
+export function cellRoleOf(studentId, vid = state.versionId) {
+  return state.members.find((m) => m.student_id === studentId && m.version_id === vid)?.role || null;
+}
+/** 리더 → 헬퍼 → 나머지 순서 (그다음은 넘겨받은 순서를 그대로 지킵니다) */
+export const ROLE_RANK = { 셀리더: 0, 셀헬퍼: 1 };
+export const roleRank = (role) => (role in ROLE_RANK ? ROLE_RANK[role] : 2);
 
 export function versionLabel(v) {
   if (!v) return "";
