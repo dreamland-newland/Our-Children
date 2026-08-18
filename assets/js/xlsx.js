@@ -148,15 +148,19 @@ export async function exportCurrentVersion() {
         .sort((a, b) => roleRank(cellRoleOf(a.id)) - roleRank(cellRoleOf(b.id))
           || gr(a) - gr(b) || a.name.localeCompare(b.name, "ko"));
       if (!ms.length) { rows.push([c.name, (c.leaders || []).join(", "), "(없음)"]); continue; }
-      ms.forEach((s, i) => rows.push([
-        i === 0 ? c.name : "", i === 0 ? (c.leaders || []).join(", ") : "",
+      // 셀 이름과 담당은 «줄마다» 채웁니다 — 엑셀에서 걸러 보기 좋고,
+      // 이 파일을 그대로 다시 올렸을 때 한 명도 빠지지 않습니다.
+      ms.forEach((s) => rows.push([
+        c.name, (c.leaders || []).join(", "),
         s.name, cellRoleOf(s.id) || "", gradeOf(s) || "", birthCell(s), s.phone || "",
       ]));
-      rows.push([]);
     }
+    const total = versionCells(v.id).reduce((n, c) => n + cellMembers(c.id).length, 0);
     add(X, wb, v.label.slice(0, 28), rows, [22, 16, 10, 8, 8, 12, 15]);
     saveWorkbook(X, wb, `${GROUP_NAME}_셀편성_${v.label}_${v.created_at.slice(0, 10)}.xlsx`);
-    toast("셀편성을 내려받았습니다.");
+    toast(total
+      ? `셀편성을 내려받았습니다. (${total}명)`
+      : "이 편성에는 배정된 아이가 없어 빈 표로 받았습니다.", total ? "" : "err");
   } catch (e) {
     console.error(e);
     toast("엑셀을 만들지 못했습니다: " + e.message, "err");

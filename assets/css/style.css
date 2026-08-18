@@ -666,3 +666,50 @@ a.tel { color: var(--series-1); }
   border-color: color-mix(in srgb, var(--series-1) 38%, transparent);
   color: var(--series-1);
 }
+
+/* ── 가져오기 화면 — 단계 안내 · 요약 ────────────────────── */
+.import-steps { display: grid; gap: 10px; }
+.import-steps > div {
+  display: flex; gap: 10px; align-items: baseline;
+  font-size: 13px; color: var(--text-secondary);
+}
+.import-steps b { flex: none; width: 74px; color: var(--text-primary); font-weight: 650; }
+.import-sum {
+  display: grid; gap: 8px; margin-top: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.import-sum .is-item {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px;
+  background: var(--surface-2);
+}
+.import-sum .is-item b { font-size: 16px; font-weight: 700; }
+.import-sum .is-item span:last-child {
+  width: 100%; font-size: 11.5px; color: var(--text-muted); line-height: 1.35;
+}
+@media (max-width: 520px) { .import-steps b { width: 62px; } }
+
+/* ── 가져오기 — «앱이 본 파일» 미리보기 ─────────────────── */
+table.data.peek th, table.data.peek td {
+  font-size: 12px; white-space: nowrap; max-width: 190px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+table.data.peek tbody th {
+  background: var(--surface-2); color: var(--text-muted);
+  text-align: center; font-weight: 600; position: sticky; left: 0;
+}
+table.data.peek tr.hit { background: color-mix(in srgb, var(--warning) 14%, transparent); }
+table.data.peek td.hit {
+  background: color-mix(in srgb, var(--warning) 32%, transparent);
+  font-weight: 700;
+}
+
+/* ── 가져오기 — 시트 안내 · 주의 ─────────────────────────── */
+.rowmap { display: grid; gap: 8px; }
+.rowmap > div { display: flex; gap: 10px; align-items: baseline; font-size: 13px;
+  color: var(--text-secondary); }
+.rowmap b { flex: none; min-width: 108px; color: var(--text-primary); font-weight: 650; }
+.form-note.warn-note {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+}

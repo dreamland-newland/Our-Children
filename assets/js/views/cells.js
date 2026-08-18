@@ -149,6 +149,91 @@ function slotsCard() {
 }
 
 
+/** 임시저장 목록의 버튼들 — 화면 아래 카드와 «불러오기» 창에서 함께 씁니다 */
+function bindSlots(scope, rerender, done) {
+  scope.querySelectorAll("[data-slot-load]").forEach((b) => b.addEventListener("click", async () => {
+    const id = b.dataset.slotLoad;
+    const it = readSlots().find((x) => x.id === id);
+    if (draft && !(await confirmDialog(
+      `지금 짜던 것을 두고 «${it?.name || ""}» 을 불러올까요? 저장하지 않은 지금 내용은 사라집니다.`,
+      { okText: "불러오기", danger: false }))) return;
+    if (loadSlot(id)) { done?.(); rerender(); toast(`«${it.name}» 을 불러왔습니다.`); }
+  }));
+  scope.querySelectorAll("[data-slot-rename]").forEach((b) => b.addEventListener("click", () => {
+    const it = readSlots().find((x) => x.id === b.dataset.slotRename);
+    if (!it) return;
+    const form = document.createElement("form");
+    form.id = "slotForm";
+    form.innerHTML = `
+      <div class="field"><label>임시저장 이름</label>
+        <input type="text" name="name" required maxlength="40" value="${esc(it.name)}"
+               placeholder="예: 형제 나눠본 안">
+        <span class="hint">내 브라우저에만 있는 이름입니다.</span></div>`;
+    modal({
+      title: "이름 바꾸기", narrow: true, body: form,
+      footer: `<button class="btn" data-close>취소</button>
+               <button class="btn btn-primary" form="slotForm" type="submit">저장</button>`,
+      onMount(box, close) {
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const nm = new FormData(form).get("name").trim();
+          if (!nm) return;
+          renameSlot(it.id, nm);
+          close(); done?.(); rerender(); toast("이름을 바꿨습니다.");
+        });
+      },
+    });
+  }));
+  scope.querySelectorAll("[data-slot-del]").forEach((b) => b.addEventListener("click", async () => {
+    const it = readSlots().find((x) => x.id === b.dataset.slotDel);
+    if (!(await confirmDialog(`«${it?.name || ""}» 을 지울까요?`, { okText: "삭제" }))) return;
+    deleteSlot(b.dataset.slotDel); done?.(); rerender(); toast("지웠습니다.");
+  }));
+}
+
+/** 임시저장 목록 창 — 모의편성 중에도 바로 열어 볼 수 있습니다 */
+function slotsModal(rerender) {
+  const box = document.createElement("div");
+  let close = null;
+  const draw = () => {
+    const list = readSlots();
+    box.innerHTML = list.length ? `
+      <div class="form-note" style="margin:0 0 12px">
+        임시저장은 <b>내 브라우저에만</b> 있습니다. 다른 선생님에게는 보이지 않고,
+        <b>«저장하기»</b> 를 눌러야 모두가 보는 편성이 됩니다.
+      </div>
+      <div class="slot-list" style="border:1px solid var(--border);border-radius:10px">
+        ${list.map((it) => `
+        <div class="slot-row">
+          <div style="min-width:0;flex:1">
+            <b>${esc(it.name)}</b>
+            <div class="slot-sub">${esc(fmtDateTime(it.savedAt))}
+              · 셀 ${it.cells.length}개
+              · 배정 ${Object.values(it.assign || {}).filter(Boolean).length}명</div>
+          </div>
+          <button class="btn btn-sm btn-primary" data-slot-load="${it.id}">불러오기</button>
+          <button class="btn btn-sm" data-slot-rename="${it.id}">이름 바꾸기</button>
+          <button class="btn btn-sm btn-danger" data-slot-del="${it.id}">삭제</button>
+        </div>`).join("")}
+      </div>`
+    : `<div class="empty" style="padding:26px 0">아직 임시저장한 안(案)이 없습니다.<br>
+         <span style="font-size:12.5px;color:var(--text-muted)">
+           모의편성 중에 «💾 임시저장» 을 누르면 여기에 쌓입니다.</span></div>`;
+    // 불러오면 창을 닫고, 이름 바꾸기·삭제는 목록만 다시 그립니다
+    bindSlots(box, rerender, () => { if (box.querySelector("[data-slot-load]")) draw(); });
+    box.querySelectorAll("[data-slot-load]").forEach((b) =>
+      b.addEventListener("click", () => setTimeout(() => close?.(), 0)));
+  };
+  draw();
+
+  modal({
+    title: "임시저장한 모의편성",
+    body: box,
+    footer: `<button class="btn" data-close>닫기</button>`,
+    onMount(b, done) { close = done; },
+  });
+}
+
 /** 보관해 둔 편성을 다시 불러옵니다. */
 function resumeDraft() {
   const o = storedDraft();
@@ -383,6 +468,9 @@ function editHtml() {
           title="다시하기 (Ctrl+Shift+Z)">↷ 다시하기${future.length ? ` <b>${future.length}</b>` : ""}</button>
       </span>
       <button class="btn btn-sm" id="slotSave" title="내 브라우저에만 안(案)으로 보관합니다">💾 임시저장</button>
+      <button class="btn btn-sm" id="slotList" title="임시저장해 둔 안(案)을 열어 봅니다"
+        ${readSlots().length ? "" : "disabled"}>📂 임시저장 목록${
+        readSlots().length ? ` <b>${readSlots().length}</b>` : ""}</button>
       <button class="btn btn-sm" id="cancelEdit">취소</button>
       <button class="btn btn-primary btn-sm" id="saveEdit" title="모두가 보는 버전으로 확정합니다">저장하기</button>
     </span>
@@ -430,7 +518,7 @@ function editHtml() {
     </button>
   </div>
 
-  <div style="margin-top:16px">${slotsCard()}</div>`;
+`;
 }
 
 /** 셀 이름에 이미 들어 있는 담당자는 아래에 또 적지 않습니다
@@ -553,44 +641,8 @@ export function mount(root, rerender) {
     rerender();
     toast(`«${it.name}» 으로 임시저장했습니다.`);
   });
-  root.querySelectorAll("[data-slot-load]").forEach((b) => b.addEventListener("click", async () => {
-    const id = b.dataset.slotLoad;
-    const it = readSlots().find((x) => x.id === id);
-    if (draft && !(await confirmDialog(
-      `지금 짜던 것을 두고 «${it?.name || ""}» 을 불러올까요? 저장하지 않은 지금 내용은 사라집니다.`,
-      { okText: "불러오기", danger: false }))) return;
-    if (loadSlot(id)) { rerender(); toast(`«${it.name}» 을 불러왔습니다.`); }
-  }));
-  root.querySelectorAll("[data-slot-rename]").forEach((b) => b.addEventListener("click", () => {
-    const it = readSlots().find((x) => x.id === b.dataset.slotRename);
-    if (!it) return;
-    const form = document.createElement("form");
-    form.id = "slotForm";
-    form.innerHTML = `
-      <div class="field"><label>임시저장 이름</label>
-        <input type="text" name="name" required maxlength="40" value="${esc(it.name)}"
-               placeholder="예: 형제 나눠본 안">
-        <span class="hint">내 브라우저에만 있는 이름입니다.</span></div>`;
-    modal({
-      title: "이름 바꾸기", narrow: true, body: form,
-      footer: `<button class="btn" data-close>취소</button>
-               <button class="btn btn-primary" form="slotForm" type="submit">저장</button>`,
-      onMount(box, close) {
-        form.addEventListener("submit", (e) => {
-          e.preventDefault();
-          const nm = new FormData(form).get("name").trim();
-          if (!nm) return;
-          renameSlot(it.id, nm);
-          close(); rerender(); toast("이름을 바꿨습니다.");
-        });
-      },
-    });
-  }));
-  root.querySelectorAll("[data-slot-del]").forEach((b) => b.addEventListener("click", async () => {
-    const it = readSlots().find((x) => x.id === b.dataset.slotDel);
-    if (!(await confirmDialog(`«${it?.name || ""}» 을 지울까요?`, { okText: "삭제" }))) return;
-    deleteSlot(b.dataset.slotDel); rerender(); toast("지웠습니다.");
-  }));
+  bindSlots(root, rerender);
+  root.querySelector("#slotList")?.addEventListener("click", () => slotsModal(rerender));
   root.querySelector("#xlsxVer")?.addEventListener("click", async () => {
     const { exportCurrentVersion } = await import("../xlsx.js");
     await exportCurrentVersion();

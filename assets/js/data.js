@@ -8,7 +8,7 @@
 import {
   SUPABASE_URL, SUPABASE_ANON_KEY, ID_EMAIL_DOMAIN, PUBLIC_SCOPE, SCHOOL_YEAR_START_MONTH,
 } from "./config.js";
-import { digits, loadScript } from "./ui.js";
+import { digits, loadScript, toast } from "./ui.js";
 
 export const state = {
   mode: "demo",          // 'supabase' | 'demo'
@@ -137,7 +137,10 @@ const supabaseAdapter = {
     const [v, c, m, t, s] = await Promise.all([
       sb.from("cell_versions").select("*").order("created_at", { ascending: false }),
       sb.from("cells").select("*").order("sort_order"),
-      sb.from("cell_members").select("id,version_id,cell_id,student_id,role"),
+      sb.from("cell_members").select("id,version_id,cell_id,student_id,role")
+        // 05_cell_seat.sql 을 아직 실행하지 않았어도 화면이 열리도록
+        .then((r) => (r.error && /role/.test(r.error.message || "")
+          ? sb.from("cell_members").select("id,version_id,cell_id,student_id") : r)),
       // 교사 전화번호는 «전부 공개» 설정에서도 로그인해야 받아옵니다(계정 사칭 방지)
       sb.from("teachers").select(isLoggedIn() ? "*" : PUBLIC_TEACHER_COLS).order("seq"),
       sb.from("students").select(limited ? PUBLIC_STUDENT_COLS : "*").order("seq"),
@@ -276,7 +279,13 @@ const supabaseAdapter = {
   },
   async saveMany(table, rows) {
     if (!rows.length) return [];
-    const { data, error } = await sb.from(table).upsert(rows).select();
+    let { data, error } = await sb.from(table).upsert(rows).select();
+    // 05_cell_seat.sql 을 아직 실행하지 않은 교적부에서도 저장은 되도록 («자리» 만 빠집니다)
+    if (error && /role/.test(error.message || "") && table === "cell_members") {
+      const plain = rows.map(({ role, ...r }) => r);
+      ({ data, error } = await sb.from(table).upsert(plain).select());
+      if (!error) toast("셀리더·셀헬퍼는 supabase/05_cell_seat.sql 을 한 번 실행해야 저장됩니다.", "err");
+    }
     if (error) throw new Error(translate(error.message));
     return data;
   },
@@ -285,12 +294,12 @@ const supabaseAdapter = {
     if (error) throw new Error(translate(error.message));
   },
 
-  async setMembership(studentId, cellId, versionId) {
+  async setMembership(studentId, cellId, versionId, role = null) {
     await sb.from("cell_members").delete()
       .eq("student_id", studentId).eq("version_id", versionId);
     if (!cellId) return;
     const { error } = await sb.from("cell_members")
-      .insert({ student_id: studentId, cell_id: cellId, version_id: versionId });
+      .insert({ student_id: studentId, cell_id: cellId, version_id: versionId, role: role || null });
     if (error) throw new Error(translate(error.message));
   },
 };
@@ -584,11 +593,12 @@ const demoAdapter = {
     this.persist();
   },
 
-  async setMembership(studentId, cellId, versionId) {
+  async setMembership(studentId, cellId, versionId, role = null) {
     if (!state.profile) throw new Error("로그인이 필요합니다.");
     demo.cell_members = demo.cell_members.filter(
       (m) => !(m.student_id === studentId && m.version_id === versionId));
-    if (cellId) demo.cell_members.push({ id: uid(), version_id: versionId, cell_id: cellId, student_id: studentId });
+    if (cellId) demo.cell_members.push({ id: uid(), version_id: versionId, cell_id: cellId,
+                                        student_id: studentId, role: role || null });
     this.persist();
   },
 
@@ -652,7 +662,8 @@ export const api = {
   saveCells: (rows) => adapter.saveMany("cells", rows),
   deleteCell: (id) => adapter.remove("cells", id),
 
-  setMembership: (sid, cid, vid = state.versionId) => adapter.setMembership(sid, cid, vid),
+  setMembership: (sid, cid, vid = state.versionId, role = null) =>
+    adapter.setMembership(sid, cid, vid, role),
   saveMembers: (rows) => adapter.saveMany("cell_members", rows),
 
   resetDemo: () => demoAdapter.reset(),
