@@ -18,8 +18,8 @@
 //  가짜 샘플 데이터를 그대로 둘러볼 수 있고, 변경사항은 이 브라우저에만 저장됩니다.
 // ============================================================
 
-export const SUPABASE_URL      = "";
-export const SUPABASE_ANON_KEY = "";
+export const SUPABASE_URL      = "https://bdmstuzsuzfvkrbtnydc.supabase.co";
+export const SUPABASE_ANON_KEY = "sb_publishable_Vo_TjiC-87LEJDCol_T-Sg_OgC8Ktc5";
 
 // ── 그 외 설정 ────────────────────────────────────────────
 export const GROUP_NAME = "꿈땅새땅";
