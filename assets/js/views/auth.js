@@ -38,6 +38,7 @@ export const login = {
         await api.refresh();
         toast(`${state.profile?.name || ""} 님, 환영합니다.`);
         location.hash = "#/students";
+        import("../pwa.js").then((m) => m.nudgeInstallPrompt()).catch(() => {});
       } catch (err) {
         showErr(root, err.message, state.pending?.admins);
         btn.disabled = false; btn.textContent = "로그인";

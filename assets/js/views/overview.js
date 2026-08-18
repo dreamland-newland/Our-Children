@@ -6,6 +6,7 @@ import {
 import { esc, barChart, avatar } from "../ui.js";
 import { showStudent } from "./students.js";
 import { GRADES } from "../config.js";
+import { bindDownload as bindXlsx } from "../xlsx.js";
 
 const MONTHS = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
 
@@ -52,7 +53,7 @@ export function overviewView() {
       <p>총 ${S.length}명의 교적 · 셀편성 ${esc(versionLabel(currentVersion()) || "미등록")}</p>
     </div>
     <div class="page-actions">
-      <button class="btn btn-primary btn-sm" id="xlsxBtn">📥 교적부 엑셀 전체 내려받기</button>
+      <button class="btn btn-sm" id="xlsxBtn">📥 엑셀 받기 (교적부 전체)</button>
       ${isLoggedIn() ? `<a class="btn btn-sm" href="#/import">파일로 가져오기</a>` : ""}
     </div>
   </div>
@@ -157,11 +158,10 @@ export function overviewView() {
 export function mount(root, rerender) {
   root.querySelectorAll("[data-student]").forEach((el) => el.addEventListener("click", () =>
     showStudent(state.students.find((s) => s.id === el.dataset.student), rerender)));
-  root.querySelector("#xlsxBtn")?.addEventListener("click", async (e) => {
-    e.target.disabled = true; e.target.textContent = "만드는 중…";
-    try { const { exportWorkbook } = await import("../xlsx.js"); await exportWorkbook(); }
-    finally { e.target.disabled = false; e.target.textContent = "📥 교적부 엑셀 전체 내려받기"; }
-  });
+  bindXlsx(root.querySelector("#xlsxBtn"), async () => {
+    const { exportWorkbook } = await import("../xlsx.js");
+    await exportWorkbook();
+  }, "📥 엑셀 받기 (교적부 전체)");
 }
 
 const shortCell = (n) =>

@@ -2,6 +2,7 @@
 import { state, cellNameOf, isLoggedIn, isMasked, photoOf, gradeOf, isActive, schoolYear } from "../data.js";
 import { esc, dash, telLink, avatar } from "../ui.js";
 import { showStudent, editStudent } from "./students.js";
+import { bindDownload as bindXlsx } from "../xlsx.js";
 
 export function html() {
   const rows = state.students
@@ -19,7 +20,7 @@ export function html() {
          ${isMasked() ? "· 연락처·보호자 정보는 <b>로그인해야</b> 보입니다." : ""}</p>
     </div>
     <div class="page-actions">
-      <button class="btn btn-sm" id="csvBtn">📥 엑셀 받기</button>
+      <button class="btn btn-sm" id="xlsxBtn">📥 엑셀 받기</button>
       ${isLoggedIn() ? `<button class="btn btn-primary btn-sm" id="addBtn">＋ 새 친구 등록</button>` : ""}
     </div>
   </div>
@@ -76,14 +77,10 @@ export function mount(root, rerender) {
   }));
   root.querySelector("#addBtn")?.addEventListener("click", () =>
     editStudent({ is_promoted: true, status: "재적" }, rerender));
-  root.querySelector("#csvBtn").addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true; btn.textContent = "만드는 중…";
-    try {
-      const { exportStudentList } = await import("../xlsx.js");
-      const rows = state.students.filter((s) => gradeOf(s) === "중1" && isActive(s));
-      await exportStudentList(rows, { masked: isMasked(), what: "올해 중1" });
-    } finally { btn.disabled = false; btn.textContent = "📥 엑셀 받기"; }
+  bindXlsx(root.querySelector("#xlsxBtn"), async () => {
+    const { exportStudentList } = await import("../xlsx.js");
+    const rows = state.students.filter((s) => gradeOf(s) === "중1" && isActive(s));
+    await exportStudentList(rows, { masked: isMasked(), what: "올해중1" });
   });
 
 }

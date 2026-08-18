@@ -130,6 +130,18 @@ const cleanText = (v) => {
 };
 const nameKey = (n) => String(n || "").replace(/\s/g, "").trim();
 
+/** 양식에 넣어둔 «예시)» 줄인가 — 그대로 올려도 홍길동이 등록되지 않도록 */
+const EXAMPLE_RE = /^(예시|보기|샘플|example|ex)\s*[)\]}.:：]?$/i;
+const isExampleRow = (row) => (row || []).some((c) => EXAMPLE_RE.test(String(c ?? "").trim()));
+
+/** 교사 구분 — «교사/간사» 처럼 애매하게 적혀 있어도 하나로 정리합니다 */
+function cleanRole(v) {
+  const t = norm(v);
+  if (!t) return null;
+  for (const r of ["교역자", "사모", "간사", "교사"]) if (t.includes(r)) return r;
+  return null;
+}
+
 // ════════════════════════════════════════════════════════════
 //  시트 분석
 // ════════════════════════════════════════════════════════════
@@ -163,12 +175,14 @@ function analyzeSheet(title, aoa) {
   });
 
   const records = [];
+  let examples = 0;             // 양식의 «예시)» 줄
   let lastCell = null;          // 셀 칸은 블록의 첫 줄에만 적는 경우가 많습니다
   for (let r = hr + 1; r < aoa.length; r++) {
     const row = aoa[r];
     const name = cleanText(row[map.name]);
     if (!name || norm(name) === "이름") continue;
     if (isNoteLine(name, row, map.name)) continue;      // «※ …» 같은 안내 줄은 건너뜁니다
+    if (isExampleRow(row)) { examples++; continue; }    // «예시)» 줄은 올리지 않습니다
     const rec = { name };
     for (const [f, i] of Object.entries(map)) {
       if (f === "name" || f === "seq") continue;
@@ -190,7 +204,11 @@ function analyzeSheet(title, aoa) {
     records.push(rec);
   }
 
-  // 2-1) 머리글은 찾았는데 아래에 이름이 한 줄도 없는 경우 — 왜인지 알려 줍니다
+  // 2-1) 양식의 «예시)» 줄만 있고 아직 아무것도 안 적은 시트
+  if (!records.length && examples)
+    return { title, kind: "blank", examples };
+
+  // 2-2) 머리글은 찾았는데 아래에 이름이 한 줄도 없는 경우 — 왜인지 알려 줍니다
   if (!records.length)
     return { title, kind: "unknown", peek: peekOf(aoa), headerRow: hr, nameCol: map.name,
              reason: `${hr + 1}번째 줄에서 ‘이름’ 열(${cellRef(map.name)}칸)은 찾았지만, `
@@ -218,6 +236,7 @@ function analyzeSheet(title, aoa) {
   // 교사 명부에서 연도가 1900년 이하이면 '연도 미상' 으로 보고 월-일만 저장
   if (kind === "teachers") {
     for (const rec of records) {
+      if (rec.role) rec.role = cleanRole(rec.role) || "간사";
       if (rec.birth && Number(rec.birth.slice(0, 4)) <= 1900) {
         rec.birth_md = rec.birth.slice(5);
         delete rec.birth;
@@ -238,7 +257,7 @@ function analyzeSheet(title, aoa) {
     if (looksCells) return longFormCells(title, records, aoa, ignored);
   }
 
-  return { title, kind, map, records, promoted, headerRow: hr, ignored };
+  return { title, kind, map, records, promoted, headerRow: hr, ignored, examples };
 }
 
 /** 세로형 셀편성 표(«교사/간사 · 이름 · 학년 …») → 셀별 명단으로 묶습니다 */
@@ -316,6 +335,7 @@ function parseCellGrid(title, aoa) {
         const v = cleanText(aoa[rr]?.[col]);
         if (!v) break;
         if (norm(v) === "이름") break;
+        if (isExampleRow(aoa[rr])) continue;              // 양식의 «예시)» 줄
         if (/선생님$|간사$|전도사$|목사$/.test(v)) break;
         const { name, seat } = splitSeat(v);
         members.push({
@@ -341,6 +361,7 @@ function parseCellGrid(title, aoa) {
       for (let rr = r + 1; rr < aoa.length; rr++) {
         const n0 = cleanText(aoa[rr]?.[c]);
         if (!n0 || norm(n0) === "이름") break;
+        if (isExampleRow(aoa[rr])) continue;              // 양식의 «예시)» 줄
         const { name: n, seat } = splitSeat(n0);
         members.push({
           name: n,
@@ -354,6 +375,7 @@ function parseCellGrid(title, aoa) {
       if (members.length) cells.push({ name: v, members });
     }
   }
+  if (!cells.length) return { title, kind: "blank" };
   return { title, kind: "cells", cells };
 }
 
@@ -429,11 +451,12 @@ export function html() {
   <div class="page-head">
     <div>
       <h1>파일로 가져오기</h1>
-      <p>올릴 수 있는 것은 <b>셀편성 · 올해중1 · 교사간사</b> 세 가지입니다.
+      <p>올릴 수 있는 것은 <b>양식 파일의 세 시트</b>뿐입니다.
         올린 내용을 먼저 보여 드리고, <b>«반영하기»를 눌러야</b> 저장됩니다.</p>
     </div>
     <div class="page-actions">
-      <button class="btn btn-sm" id="tplBtn">양식 파일 받기</button>
+      <a class="btn btn-sm" id="tplBtn" href="./assets/templates/import-template.xlsx"
+         download="꿈땅새땅_가져오기_양식.xlsx">📥 양식 파일 받기</a>
     </div>
   </div>
 
@@ -442,8 +465,8 @@ export function html() {
     <div style="font-size:34px;line-height:1">📄</div>
     <div style="font-weight:650;margin-top:10px">여기에 파일을 끌어다 놓거나 클릭해서 선택하세요</div>
     <div style="color:var(--text-muted);font-size:13px;margin-top:5px">
-      .xlsx · .csv — <b>셀편성 · 올해중1 · 교사간사</b> 세 가지를 알아봅니다.
-      «양식 파일 받기» 로 받은 파일에 채워 넣으시면 가장 확실합니다.</div>
+      .xlsx · .csv — <b>학생명단 · 셀편성 · 교사간사연락처</b> 세 가지를 알아봅니다.
+      오른쪽 위 «양식 파일 받기» 로 받은 파일에 채워 넣어 주세요.</div>
     <input type="file" id="file" accept=".xlsx,.xls,.csv" style="display:none">
   </div>
 
@@ -465,13 +488,14 @@ export function html() {
       올릴 수 있는 것은 <b>이 세 가지</b>입니다. «양식 파일 받기» 를 누르면 세 시트가 한 파일로 들어 있습니다.
     </div>
     <div class="rowmap">
+      <div><b>학생명단</b><span>→ 주소록. 이미 있는 아이는 <b>정보만 고쳐지고</b>, 없던 아이는 새로 등록됩니다</span></div>
       <div><b>셀편성</b><span>→ 셀편성 화면에 <b>새 편성 버전</b>으로. 셀리더·셀헬퍼도 함께 들어갑니다</span></div>
-      <div><b>올해중1</b><span>→ 주소록. <b>교적부에 없던 아이에게만</b> «하늘아이» 표시가 붙고,
-        이미 있는 아이는 정보만 고쳐집니다</span></div>
-      <div><b>교사간사</b><span>→ 교사·간사 명부. 회원가입 «나예요!» 확인에 쓰입니다</span></div>
+      <div><b>교사간사연락처</b><span>→ 교사·간사 명부. 회원가입 «나예요!» 확인에 쓰입니다</span></div>
     </div>
     <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px">
       생일 명단과 «올해 중1» 화면은 따로 올리지 않습니다 — <b>생년월일만 있으면 저절로</b> 만들어집니다.
+      새로 올라온 아이들만 올리실 때는 시트 이름을 <b>«올해중1»</b> 로 두시면,
+      그때 <b>새로 등록되는 아이에게만</b> «하늘아이» 표시가 붙습니다.
       아이 한 명 고치기·셀 하나 옮기기는 파일보다 앱에서 하시는 편이 빠릅니다.
     </div>
     <div class="form-note warn-note" style="margin-top:12px">
@@ -481,7 +505,7 @@ export function html() {
            칸 순서를 옮기거나 필요 없는 칸을 빼는 건 괜찮습니다.<br>
         ② <b>머리글 줄 위에는 메모를 넣지 마세요.</b> 굳이 넣으신다면 «이름» «학년» «생일» 같은
            <b>칸 이름과 같은 낱말은 피해</b> 주세요 — 그 줄을 머리글로 착각할 수 있습니다.<br>
-        ③ <b>시트 이름</b>은 «셀편성» · «올해중1» · «교사간사» 로 두세요.
+        ③ <b>시트 이름</b>은 양식에 있는 그대로(«학생명단» · «셀편성» · «교사간사연락처») 두세요.
            앱이 무엇으로 읽을지 이 이름으로 먼저 판단합니다.
       </div>
       <div style="margin-top:6px">
@@ -522,7 +546,6 @@ export function mount(root, rerender) {
   input.addEventListener("change", () => {
     if (input.files[0]) handleFile(input.files[0], root, rerender);
   });
-  root.querySelector("#tplBtn").addEventListener("click", downloadTemplate);
 }
 
 async function handleFile(file, root, rerender) {
@@ -547,15 +570,21 @@ async function handleFile(file, root, rerender) {
 
 function drawResult(root, rerender) {
   const res = root.querySelector("#result");
-  const usable = sheets.filter((s) => s.kind !== "unknown" && s.kind !== "guide");
+  const usable = sheets.filter(
+    (s) => s.kind !== "unknown" && s.kind !== "guide" && s.kind !== "blank");
   if (!usable.length) {
+    const onlyBlank = sheets.some((s) => s.kind === "blank")
+      && !sheets.some((s) => s.kind === "unknown");
     res.innerHTML = `
       <div class="card card-pad" style="margin-bottom:14px">
         <b>${esc(fileName)}</b>
-        <span style="color:var(--text-muted);font-size:13px"> · 반영할 자료를 찾지 못했습니다</span>
+        <span style="color:var(--text-muted);font-size:13px"> · 올릴 내용이 없습니다</span>
         <div class="form-note" style="margin-top:10px">
-          아래 표는 <b>앱이 이 파일에서 읽은 그대로</b>입니다. 무엇이 비어 있는지 확인해 보세요.
-          <b>«양식 파일 받기»</b> 로 표준 양식을 받아 그 위에 채워 넣으면 가장 확실합니다.
+          ${onlyBlank
+            ? `아직 <b>예시 줄만</b> 있는 양식 파일입니다. 예시 아래에 아이들을 적어서 다시 올려 주세요.
+               <b>«예시)» 라고 적힌 줄은 올라가지 않으니</b> 지우지 않고 두셔도 됩니다.`
+            : `아래 표는 <b>앱이 이 파일에서 읽은 그대로</b>입니다. 무엇이 비어 있는지 확인해 보세요.
+               <b>«양식 파일 받기»</b> 로 표준 양식을 받아 그 위에 채워 넣으면 가장 확실합니다.`}
         </div>
       </div>
       ${sheets.map((s, i) => sheetCard(s, i)).join("")}`;
@@ -566,7 +595,7 @@ function drawResult(root, rerender) {
     <div class="card card-pad" style="margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <b>${esc(fileName)}</b>
       <span style="color:var(--text-muted);font-size:13px">시트 ${
-        sheets.filter((s) => s.kind !== "guide").length}개 중 ${usable.length}개 인식</span>
+        sheets.filter((s) => s.kind !== "guide").length}개 중 ${usable.length}개에 올릴 내용이 있습니다</span>
     </div>
     ${sheets.map((s, i) => sheetCard(s, i)).join("")}`;
 
@@ -576,6 +605,16 @@ function drawResult(root, rerender) {
 
 function sheetCard(s, i) {
   if (s.kind === "guide") return "";        // 설명용 시트는 보여줄 것이 없습니다
+  if (s.kind === "blank") {
+    return `<section class="card card-pad" style="margin-bottom:14px">
+      <b>${esc(s.title)}</b>
+      <span class="badge" style="margin-left:6px">아직 안 적음</span>
+      <div style="font-size:13px;color:var(--text-secondary);margin-top:6px">
+        ${s.examples ? "<b>«예시)» 줄만 있습니다.</b> " : ""}이 시트에는 올릴 내용이 없어 그냥 넘어갑니다.
+        예시 줄 <b>아래</b>에 이어서 적어 주세요 — <b>«예시)» 라고 적힌 줄은 올라가지 않습니다.</b>
+      </div>
+    </section>`;
+  }
   if (s.kind === "unknown") {
     return `<section class="card" style="margin-bottom:14px">
       <div class="card-head">
@@ -681,7 +720,8 @@ function sheetCard(s, i) {
         ${cols.map((f) => `<span class="badge">${esc(head(f))}</span>`).join(" ")}
         ${ignoredNote(s)}
         <div style="margin-top:4px;color:var(--text-muted);font-size:12.5px">
-          아래는 <b>파일에 적힌 그대로</b>입니다. 아직 아무것도 저장되지 않았습니다.</div>
+          아래는 <b>파일에 적힌 그대로</b>입니다. 아직 아무것도 저장되지 않았습니다.
+          ${s.examples ? `<b>«예시)» 로 표시된 ${s.examples}줄은 건너뛰었습니다.</b>` : ""}</div>
       </div>
       ${kindNote(s, label)}
       <div class="table-wrap" style="max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:8px">
@@ -779,7 +819,7 @@ function kindNote(s, label) {
   <div class="form-note" style="margin:8px 0 0">
     이 시트를 <b>«${esc(label)}»</b> 로 봤습니다${where ? ` — ${where}` : ""}.
     <div style="margin-top:3px;color:var(--text-muted)">
-      다르게 읽히길 원하시면 <b>시트 이름</b>을 «셀편성» · «올해중1» · «교사간사» 중 하나로 바꿔 주세요.
+      다르게 읽히길 원하시면 <b>시트 이름</b>을 «학생명단» · «셀편성» · «교사간사연락처» 중 하나로 바꿔 주세요.
     </div>
   </div>`;
 }
@@ -959,96 +999,8 @@ function askLabel(suggest, cellCount, total) {
 }
 
 // ── 양식 파일 ────────────────────────────────────────────
-async function downloadTemplate() {
-  const X = await loadXLSX();
-  const wb = X.utils.book_new();
-
-  // 0) 읽어보기 — 어느 시트에 무엇을 적는지
-  const s0 = X.utils.aoa_to_sheet([
-    ["꿈땅새땅 교적부 — 가져오기 양식"],
-    [],
-    ["올릴 수 있는 것은 이 세 가지입니다"],
-    ["시트", "무엇을 적나요", "어디로 들어가나요"],
-    ["셀편성", "셀별 명단 (교사/간사 · 이름 · 자리 …)", "셀편성 화면에 새 편성 버전으로"],
-    ["올해중1", "새로 올라온 아이들 인적사항", "주소록 (새로 등록되는 아이에게 «하늘아이» 표시)"],
-    ["교사간사", "선생님·간사님 명부", "교사·간사 화면 (회원가입 «나예요!» 확인에 씁니다)"],
-    [],
-    ["※ 생일 명단과 «올해 중1» 화면은 따로 올리지 않습니다 — 생년월일만 있으면 저절로 만들어집니다."],
-    ["※ 아이 한 명 고치기, 셀 하나 옮기기는 파일 말고 앱에서 하시는 편이 빠릅니다."],
-    ["※ 이미 교적에 있는 아이를 «올해중1» 시트에 적으면 정보만 고쳐집니다(하늘아이 표시는 안 붙습니다)."],
-    [],
-    ["양식을 바꾸지 말아 주세요 — 이 세 가지만 지키면 됩니다"],
-    ["① 머리글 줄의 칸 이름을 바꾸거나 지우지 마세요. 순서를 옮기거나 안 쓰는 칸을 빼는 건 괜찮습니다."],
-    ["② 머리글 줄 위에 메모를 넣지 마세요. 굳이 넣으신다면 «이름» «학년» «생일» 같은 낱말은 피해 주세요."],
-    ["③ 시트 이름(셀편성 · 올해중1 · 교사간사)은 그대로 두세요. 앱이 이 이름으로 무엇인지 판단합니다."],
-    [],
-    ["그 밖에 알아두면 좋은 것"],
-    ["· 열 순서가 달라도, 띄어쓰기가 있어도 알아봅니다."],
-    ["· 파일에 없는 칸은 지금 값을 그대로 둡니다. 빈칸으로 지워지지 않습니다."],
-    ["· 파일에 없는 아이는 교적부에서 지워지지 않습니다."],
-    ["· 학년은 비워 두는 편이 낫습니다. 생년월일만 있으면 3월 1일에 저절로 올라갑니다."],
-    ["· 생년월일을 모르면 태어난 해(2013)만 적어도 됩니다."],
-    ["· 올린 뒤 «반영하기» 를 누르기 전까지는 교적부가 하나도 바뀌지 않습니다."],
-  ]);
-  s0["!cols"] = [{ wch: 14 }, { wch: 40 }, { wch: 46 }];
-  X.utils.book_append_sheet(wb, s0, "읽어보기");
-
-  // 1) 셀편성 — 위에서 아래로 쭉 (담당 선생님은 셀의 첫 줄에만 적어도 됩니다)
-  const s1 = X.utils.aoa_to_sheet([
-    ["교사/간사", "이름", "자리", "학년", "생년월일", "전화번호"],
-    ["김○○ 선생님", "홍길동", "리더", "", "2013-03-01", "010-0000-0000"],
-    ["", "박○○", "헬퍼", "", "2013-07-07", "010-4444-4444"],
-    ["", "이몽룡", "", "", "2012-02-02", "010-6666-6666"],
-    ["", "", "", "", "", ""],
-    ["이○○ 간사", "김철수", "리더", "", "2010-05-05", "010-3333-3333"],
-    ["", "김영희", "", "", "2010-09-09", "010-5555-5555"],
-    ["", "", "", "", "", ""],
-    ["장기결석자", "최○○", "", "", "2011-04-04", ""],
-    [],
-    ["※ «교사/간사» 는 셀의 첫 줄에만 적어도 됩니다 — 아래 빈 칸은 같은 셀로 봅니다."],
-    ["※ «자리» 는 리더 · 헬퍼 · 셀원(또는 비움). 없어도 되고, 리더·헬퍼가 여러 명이어도 됩니다."],
-    ["※ 담당이 두 분이면 «김○○, 이○○» 처럼 쉼표로 적어 주세요."],
-    ["※ 반영하면 새 편성 버전이 만들어지고, 지난 편성은 그대로 남습니다."],
-  ]);
-  s1["!cols"] = [{ wch: 18 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 14 }, { wch: 16 }];
-  X.utils.book_append_sheet(wb, s1, "셀편성");
-
-  // 2) 올해중1 — 새로 올라온 아이들
-  const s2 = X.utils.aoa_to_sheet([
-    ["이름", "성별", "학교", "생년월일", "전화번호", "어머니성함", "어머니연락처",
-     "아버지성함", "아버지연락처", "형제관계", "집주소", "비고(특이사항)"],
-    ["홍길동", "남", "○○중학교", "2013-03-01", "010-0000-0000", "김○○", "010-1111-1111",
-     "홍○○", "010-2222-2222", "홍길순(누나)", "경기도 …", "○○ 알레르기"],
-    ["홍길순", "여", "○○중학교", "2013-05-05", "", "김○○", "010-1111-1111",
-     "홍○○", "010-2222-2222", "홍길동(오빠)", "경기도 …", ""],
-    [],
-    ["※ 학년 칸은 없습니다 — 생년월일로 저절로 정해지고 해마다 올라갑니다."],
-    ["※ 여기 적은 아이 중 «교적부에 없는 아이» 에게만 «하늘아이» 표시가 붙습니다."],
-    ["※ 이미 있는 아이를 적으면 그 아이의 정보만 고쳐집니다 — 주소록을 한꺼번에 고칠 때도 이 시트를 쓰세요."],
-  ]);
-  s2["!cols"] = Array(12).fill({ wch: 14 });
-  X.utils.book_append_sheet(wb, s2, "올해중1");
-
-  // 3) 교사간사
-  const s3 = X.utils.aoa_to_sheet([
-    ["이름", "구분", "생년월일", "전화번호", "비고"],
-    ["김○○", "교사", "1990-01-01", "010-0000-0000", ""],
-    ["이○○", "간사", "2000-01-01", "010-0000-0000", ""],
-    [],
-    ["※ «구분» 은 교역자 · 사모 · 교사 · 간사 중 하나입니다."],
-    ["※ 생년을 모르면 «0000-05-05» 처럼 적으면 월·일만 저장됩니다(생일 명단에 나옵니다)."],
-  ]);
-  s3["!cols"] = [{ wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 26 }];
-  X.utils.book_append_sheet(wb, s3, "교사간사");
-
-  const out = X.write(wb, { bookType: "xlsx", type: "array" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([out],
-    { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-  a.download = "꿈땅새땅_가져오기_양식.xlsx";
-  document.body.appendChild(a); a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
-  toast("양식 파일을 내려받았습니다.");
-}
+//   양식은 코드로 만들지 않고 저장소의 파일을 그대로 내려 줍니다.
+//     assets/templates/import-template.xlsx
+//   양식을 손보고 싶으면 그 파일 하나만 바꿔 올리면 됩니다.
 
 export { uid, cellIdOf, modal };

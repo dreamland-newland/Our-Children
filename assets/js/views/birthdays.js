@@ -2,6 +2,7 @@
 import { state, birthdayList, isActive } from "../data.js";
 import { esc } from "../ui.js";
 import { showStudent } from "./students.js";
+import { bindDownload as bindXlsx } from "../xlsx.js";
 
 let filter = "all"; // all | student | staff
 
@@ -29,7 +30,7 @@ export function html() {
         <option value="student"${filter === "student" ? " selected" : ""}>학생만</option>
         <option value="staff"${filter === "staff" ? " selected" : ""}>교사·간사만</option>
       </select>
-      <button class="btn btn-sm" id="csvBtn">📥 엑셀 받기</button>
+      <button class="btn btn-sm" id="xlsxBtn">📥 엑셀 받기</button>
     </div>
   </div>
 
@@ -77,11 +78,9 @@ export function mount(root, rerender) {
   root.querySelector("#who").addEventListener("change", (e) => { filter = e.target.value; rerender(); });
   root.querySelectorAll("[data-student]").forEach((li) => li.addEventListener("click", () =>
     showStudent(state.students.find((s) => s.id === li.dataset.student), rerender)));
-  root.querySelector("#csvBtn").addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true; btn.textContent = "만드는 중…";
-    try { const { exportBirthdays } = await import("../xlsx.js"); await exportBirthdays(); }
-    finally { btn.disabled = false; btn.textContent = "📥 엑셀 받기"; }
+  bindXlsx(root.querySelector("#xlsxBtn"), async () => {
+    const { exportBirthdays } = await import("../xlsx.js");
+    await exportBirthdays();
   });
 
 }

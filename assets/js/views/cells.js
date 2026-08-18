@@ -10,6 +10,7 @@ import {
 import { esc, modal, toast, confirmDialog, avatar } from "../ui.js";
 import { DEFAULT_TERM_LABEL } from "../config.js";
 import { showStudent } from "./students.js";
+import { bindDownload as bindXlsx } from "../xlsx.js";
 
 // 편집 중인 초안 (저장 전까지 서버/저장소에 반영되지 않습니다)
 let draft = null;
@@ -413,7 +414,7 @@ export function html() {
         ${state.versions.map((x) => `<option value="${x.id}"${x.id === v.id ? " selected" : ""}>
           ${esc(versionLabel(x))}</option>`).join("")}
       </select>
-      <button class="btn btn-sm" id="xlsxVer">📥 현재 버전 받기</button>
+      <button class="btn btn-sm" id="xlsxVer">📥 엑셀 받기</button>
       ${isLoggedIn() ? `<button class="btn btn-primary btn-sm" id="editBtn">✏️ 편집 (모의편성)</button>` : ""}
       ${isAdmin() ? `<button class="btn btn-sm btn-danger" id="delVer">버전 삭제</button>` : ""}
     </div>
@@ -643,7 +644,7 @@ export function mount(root, rerender) {
   });
   bindSlots(root, rerender);
   root.querySelector("#slotList")?.addEventListener("click", () => slotsModal(rerender));
-  root.querySelector("#xlsxVer")?.addEventListener("click", async () => {
+  bindXlsx(root.querySelector("#xlsxVer"), async () => {
     const { exportCurrentVersion } = await import("../xlsx.js");
     await exportCurrentVersion();
   });

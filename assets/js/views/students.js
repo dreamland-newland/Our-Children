@@ -9,6 +9,7 @@ import {
 } from "../ui.js";
 import { GRADES } from "../config.js";
 import { moveStudent } from "./cells.js";
+import { bindDownload as bindXlsx } from "../xlsx.js";
 
 const f = { q: "", grade: "", gender: "", cell: "", status: "재학", sort: "seq", dir: 1 };
 
@@ -23,7 +24,7 @@ export function html() {
         : "이름·학교·전화번호·보호자 이름으로 검색할 수 있습니다."}</p>
     </div>
     <div class="page-actions">
-      <button class="btn btn-sm" id="csvBtn">📥 엑셀 받기</button>
+      <button class="btn btn-sm" id="xlsxBtn">📥 엑셀 받기</button>
       ${isLoggedIn() ? `<button class="btn btn-primary btn-sm" id="addBtn">＋ 학생 등록</button>`
                      : `<a class="btn btn-sm" href="#/login">로그인하고 등록하기</a>`}
     </div>
@@ -59,13 +60,9 @@ export function mount(root) {
   root.querySelector("#q").addEventListener("input", (e) => { f.q = e.target.value; rerender(); });
   for (const k of ["grade", "gender", "cell", "status"])
     root.querySelector("#" + k).addEventListener("change", (e) => { f[k] = e.target.value; rerender(); });
-  root.querySelector("#csvBtn").addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true; btn.textContent = "만드는 중…";
-    try {
-      const { exportStudentList } = await import("../xlsx.js");
-      await exportStudentList(filtered(), { masked: isMasked(), what: "주소록" });
-    } finally { btn.disabled = false; btn.textContent = "📥 엑셀 받기"; }
+  bindXlsx(root.querySelector("#xlsxBtn"), async () => {
+    const { exportStudentList } = await import("../xlsx.js");
+    await exportStudentList(filtered(), { masked: isMasked(), what: "주소록" });
   });
   root.querySelector("#addBtn")?.addEventListener("click", () => editStudent(null, rerender));
   draw(root);

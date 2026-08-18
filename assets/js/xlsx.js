@@ -22,7 +22,21 @@ export async function loadXLSX() {
 const ORDER = GRADES;
 const gradeRank = (g) => { const i = ORDER.indexOf(g); return i < 0 ? 99 : i; };
 const gr = (s) => gradeRank(gradeOf(s));
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => new Date().toISOString().slice(0, 10).replace(/-/g, "");
+/** 내려받는 파일 이름을 한 가지 모양으로 — 꿈땅새땅_주소록_20260818.xlsx */
+const fileName = (what, extra) =>
+  [GROUP_NAME, what, extra, today()].filter(Boolean).join("_") + ".xlsx";
+
+/** 어느 화면에서든 «받기» 버튼이 똑같이 움직이도록 (표시 · 만드는 중 · 오류) */
+export function bindDownload(btn, run, label = "📥 엑셀 받기") {
+  if (!btn) return;
+  btn.textContent = label;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "만드는 중…";
+    try { await run(); } finally { btn.disabled = false; btn.textContent = label; }
+  });
+}
 
 /** 교적부 전체를 .xlsx 한 파일로 (현재 선택된 셀편성 버전 기준) */
 export async function exportWorkbook() {
@@ -123,7 +137,7 @@ export async function exportWorkbook() {
     ];
     add(X, wb, "교사간사연락처", tea, [6, 10, 8, 13, 15, 22, 8]);
 
-    saveWorkbook(X, wb, `${GROUP_NAME}_교적부_${today()}.xlsx`);
+    saveWorkbook(X, wb, fileName("교적부전체"));
     toast("엑셀 파일을 내려받았습니다.");
   } catch (e) {
     console.error(e);
@@ -157,7 +171,7 @@ export async function exportCurrentVersion() {
     }
     const total = versionCells(v.id).reduce((n, c) => n + cellMembers(c.id).length, 0);
     add(X, wb, v.label.slice(0, 28), rows, [22, 16, 10, 8, 8, 12, 15]);
-    saveWorkbook(X, wb, `${GROUP_NAME}_셀편성_${v.label}_${v.created_at.slice(0, 10)}.xlsx`);
+    saveWorkbook(X, wb, fileName("셀편성", v.label));
     toast(total
       ? `셀편성을 내려받았습니다. (${total}명)`
       : "이 편성에는 배정된 아이가 없어 빈 표로 받았습니다.", total ? "" : "err");
@@ -194,7 +208,7 @@ export async function exportStudentList(rows, { masked = false, what = "주소�
       head, ...body,
     ], masked ? [6, 10, 6, 8, 14, 12, 16, 10, 8]
               : [6, 10, 6, 8, 14, 12, 15, 10, 15, 10, 15, 14, 34, 24, 16, 10, 8]);
-    saveWorkbook(X, wb, `${GROUP_NAME}_${what}_${today()}.xlsx`);
+    saveWorkbook(X, wb, fileName(what));
     toast(masked ? "연락처를 뺀 명단을 내려받았습니다. 전체는 로그인 후 받을 수 있습니다."
                  : "엑셀로 내려받았습니다.");
   } catch (e) {
@@ -218,7 +232,7 @@ export async function exportBirthdays() {
       rows.push([]);
     }
     add(X, wb, "월별생일명단", rows, [8, 6, 12, 10, 10]);
-    saveWorkbook(X, wb, `${GROUP_NAME}_월별생일명단_${today()}.xlsx`);
+    saveWorkbook(X, wb, fileName("생일명단"));
     toast("엑셀로 내려받았습니다.");
   } catch (e) {
     console.error(e);
@@ -242,7 +256,7 @@ export async function exportTeachers({ masked = false } = {}) {
     add(X, wb, "교사간사연락처", [
       [`${GROUP_NAME} 교사·간사 연락처`, `${body.length}명`, `${today()} 기준`], [], head, ...body,
     ], masked ? [6, 12, 10, 14, 10] : [6, 12, 10, 14, 16, 30, 10]);
-    saveWorkbook(X, wb, `${GROUP_NAME}_교사간사연락처_${today()}.xlsx`);
+    saveWorkbook(X, wb, fileName("교사간사"));
     toast(masked ? "전화번호를 뺀 명단을 내려받았습니다. 전체는 로그인 후 받을 수 있습니다."
                  : "엑셀로 내려받았습니다.");
   } catch (e) {

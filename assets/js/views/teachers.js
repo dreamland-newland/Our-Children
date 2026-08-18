@@ -1,6 +1,7 @@
 // ── 교사 / 간사 연락처 ─────────────────────────────────────
 import { state, api, isLoggedIn, isAdmin } from "../data.js";
 import { esc, dash, telLink, fmtBirth, modal, toast, confirmDialog, avatar } from "../ui.js";
+import { bindDownload as bindXlsx } from "../xlsx.js";
 
 const ROLES = ["교역자", "사모", "교사", "간사"];
 
@@ -15,7 +16,7 @@ export function html() {
       <p>${rows.length}명 · ${claimed}명 계정 연결됨 · 가입은 <b>관리자 승인</b>으로 열립니다.</p>
     </div>
     <div class="page-actions">
-      <button class="btn btn-sm" id="csvBtn">📥 엑셀 받기</button>
+      <button class="btn btn-sm" id="xlsxBtn">📥 엑셀 받기</button>
       ${isAdmin() ? `<button class="btn btn-sm${state.pendingCount ? " btn-primary" : ""}" id="accounts">
                        👥 가입 승인 · 계정${state.pendingCount
                          ? ` <span class="badge orange" style="margin-left:2px">${state.pendingCount}</span>` : ""}</button>
@@ -72,11 +73,9 @@ export function mount(root, rerender) {
   root.querySelector("#addBtn")?.addEventListener("click", () => editTeacher(null, rerender));
   root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () =>
     editTeacher(state.teachers.find((t) => t.id === b.dataset.edit), rerender)));
-  root.querySelector("#csvBtn").addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true; btn.textContent = "만드는 중…";
-    try { const { exportTeachers } = await import("../xlsx.js"); await exportTeachers({ masked: !isLoggedIn() }); }
-    finally { btn.disabled = false; btn.textContent = "📥 엑셀 받기"; }
+  bindXlsx(root.querySelector("#xlsxBtn"), async () => {
+    const { exportTeachers } = await import("../xlsx.js");
+    await exportTeachers({ masked: !isLoggedIn() });
   });
 
 }
