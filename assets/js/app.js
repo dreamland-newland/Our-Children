@@ -76,7 +76,7 @@ function render() {
 
 window.addEventListener("hashchange", () => {
   resetSignup();
-  if (location.hash !== "#/cells") cells.discardDraft();
+  if (location.hash !== "#/cells") cells.parkDraft();
   render();
 });
 

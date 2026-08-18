@@ -39,11 +39,14 @@ export function html() {
       ${versionCells().map((c) => `<option value="${c.id}"${f.cell === c.id ? " selected" : ""}>${esc(c.name)}</option>`).join("")}
       <option value="__none"${f.cell === "__none" ? " selected" : ""}>미배정</option>
     </select>
-    <select id="status">
-      <option value="재학"${f.status === "재학" ? " selected" : ""}>재학 중</option>
-      <option value=""${f.status === "" ? " selected" : ""}>전체(졸업 포함)</option>
-      ${["재적", "장기결석", "졸업", "전출"].map((v) =>
-        `<option value="${v}"${f.status === v ? " selected" : ""}>${v === "졸업" ? "졸업(청년부)" : v}</option>`).join("")}
+    <select id="status" title="지금 우리 부서에 있는 아이만 볼지, 떠난 아이까지 볼지 고릅니다">
+      ${[["재학",  "지금 우리 부서 아이들"],
+         ["재적",  "└ 잘 나오는 아이만"],
+         ["장기결석", "└ 오래 못 본 아이만"],
+         ["졸업",  "졸업 — 청년부로 올라감"],
+         ["전출",  "전출 — 다른 교회로 옮김"],
+         ["",      "전부 (떠난 아이까지)"]].map(([v, t]) =>
+        `<option value="${v}"${f.status === v ? " selected" : ""}>${t}</option>`).join("")}
     </select>
     <span class="count" id="count"></span>
   </div>
@@ -281,9 +284,12 @@ export function editStudent(s, after) {
     <div class="section-label">교적 관리</div>
     <div class="grid grid-2">
       ${fld("상태", `<select name="status">
-        ${["재적", "장기결석", "전출"].map((v) =>
-          `<option value="${v}"${(s.status || "재적") === v ? " selected" : ""}>${v}</option>`).join("")}
-      </select><span class="hint">고3을 지나면 «졸업»은 자동입니다.</span>`)}
+        ${[["재적", "재적 — 지금 잘 나옴"],
+           ["장기결석", "장기결석 — 오래 못 봄 (계속 챙길 아이)"],
+           ["전출", "전출 — 다른 교회로 옮김"]].map(([v, t]) =>
+          `<option value="${v}"${(s.status || "재적") === v ? " selected" : ""}>${t}</option>`).join("")}
+      </select><span class="hint">«졸업»은 고3을 지나면 자동이라 여기 없습니다.
+        장기결석도 셀편성에는 그대로 남습니다.</span>`)}
       ${fld("하늘아이", `<label style="display:flex;gap:8px;align-items:center;cursor:pointer;
         padding:7px 0;font-size:14px">
         <input type="checkbox" name="is_promoted" style="width:auto"${s.is_promoted ? " checked" : ""}>

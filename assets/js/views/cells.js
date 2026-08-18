@@ -37,6 +37,7 @@ export function undo(after) {
   future.push(snapshot());
   if (future.length > HISTORY_MAX) future.shift();
   restore(past.pop());
+  keepDraft();
   after?.();
 }
 export function redo(after) {
@@ -44,16 +45,114 @@ export function redo(after) {
   past.push(snapshot());
   if (past.length > HISTORY_MAX) past.shift();
   restore(future.pop());
+  keepDraft();
   after?.();
 }
 export const canUndo = () => !!draft && past.length > 0;
 export const canRedo = () => !!draft && future.length > 0;
+
+// ── 짜던 편성 보관 (이 브라우저에만) ────────────────────────
+//   저장을 누르기 전까지는 서버에 올라가지 않지만, 창을 닫았다 열어도
+//   «이어서 하기» 를 할 수 있도록 브라우저에 잠깐 넣어 둡니다.
+const DRAFT_KEY = "kkumttang.celldraft.v1";
+function keepDraft() {
+  if (!draft) return;
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draft, savedAt: new Date().toISOString() }));
+  } catch { /* 저장 공간이 꽉 차도 편집은 계속됩니다 */ }
+}
+function storedDraft() {
+  try {
+    const o = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+    return o && Array.isArray(o.cells) ? o : null;
+  } catch { return null; }
+}
+function forgetDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch {} }
+export const hasKeptDraft = () => !draft && !!storedDraft();
+
+/** 보관해 둔 편성을 다시 불러옵니다. */
+function resumeDraft() {
+  const o = storedDraft();
+  if (!o) return false;
+  draft = { base: o.base ?? null, label: o.label || DEFAULT_TERM_LABEL, note: o.note || "",
+            cells: o.cells, assign: o.assign || {}, orig: o.orig || {} };
+  past = []; future = [];
+  return true;
+}
 
 const ORDER = ["예비중1", "중1", "중2", "중3", "고1", "고2", "고3"];
 const gradeRank = (g) => { const i = ORDER.indexOf(g); return i < 0 ? 99 : i; };
 /** 최신 편성에서는 졸업생을 감추고, 지난 편성에서는 기록 그대로 보여줍니다. */
 const visibleMembers = (cellId, isLatest) =>
   cellMembers(cellId).filter((s) => (isLatest ? !isGraduated(s) : true));
+// ── 편성할 때 도움이 되는 정보들 ──────────────────────────
+/** 만 나이 (생년월일을 모르고 연도만 있으면 그 해 기준 어림값) */
+function ageOf(st) {
+  const n = new Date();
+  if (st?.birth) {
+    const b = new Date(st.birth);
+    let a = n.getFullYear() - b.getFullYear();
+    const m = n.getMonth() - b.getMonth();
+    if (m < 0 || (m === 0 && n.getDate() < b.getDate())) a -= 1;
+    return a >= 0 && a < 100 ? `${a}세` : "";
+  }
+  if (st?.birth_year) return `약 ${n.getFullYear() - Number(st.birth_year)}세`;
+  return "";
+}
+const shortSchool = (v) => String(v || "").replace(/(중학교|고등학교|중|고)$/, "").trim();
+const nk = (v) => String(v || "").replace(/\s/g, "");
+
+/** 형제자매 찾기 — «형제관계» 칸의 이름, 또는 집주소가 같은 아이 */
+let sibCache = null;
+function siblingsOf(id) {
+  if (!sibCache) {
+    sibCache = new Map();
+    const byName = new Map(state.students.map((x) => [nk(x.name), x]));
+    const link = (a, b) => {
+      if (a === b) return;
+      if (!sibCache.has(a)) sibCache.set(a, new Set());
+      sibCache.get(a).add(b);
+    };
+    for (const st of state.students) {
+      for (const raw of String(st.siblings || "").split(/[,·/]/)) {
+        const t = byName.get(nk(raw).replace(/\(.*?\)/g, ""));
+        if (t) { link(st.id, t.id); link(t.id, st.id); }
+      }
+      const ad = nk(st.address);
+      if (ad.length >= 10) {
+        for (const o of state.students)
+          if (o.id !== st.id && nk(o.address) === ad) { link(st.id, o.id); link(o.id, st.id); }
+      }
+    }
+  }
+  return [...(sibCache.get(id) || [])].map((x) => state.students.find((y) => y.id === x)).filter(Boolean);
+}
+const clearSibCache = () => { sibCache = null; };
+
+/** 로그인한 교사진 본인이 담당하는 셀인가 */
+function isMyCell(c) {
+  const me = state.profile;
+  if (!me) return false;
+  const t = state.teachers.find((x) => x.id === me.teacher_id);
+  const names = [t?.name, me.name].filter(Boolean).map(nk);
+  if (!names.length) return false;
+  const hay = [...(c.leaders || []), c.name].map(nk).join(" ");
+  return names.some((n) => n && hay.includes(n));
+}
+/** 내 셀을 맨 앞으로 (표시 순서만 바꿉니다 — 저장되는 순서는 그대로) */
+const myFirst = (list) => [...list].sort((a, b) => (isMyCell(b) ? 1 : 0) - (isMyCell(a) ? 1 : 0));
+
+/** 셀 카드 머리말에 붙는 «남 3 · 여 4 | 중1 2 · 중2 3» 요약 */
+function cellStats(members) {
+  const m = members.filter((x) => x.gender === "남").length;
+  const f = members.filter((x) => x.gender === "여").length;
+  const g = {};
+  for (const x of members) { const k = gradeOf(x) || "?"; g[k] = (g[k] || 0) + 1; }
+  const gs = ORDER.filter((k) => g[k]).map((k) => `${k} ${g[k]}`).join(" · ");
+  const sex = [m ? `남 ${m}` : "", f ? `여 ${f}` : ""].filter(Boolean).join(" · ");
+  return [sex, gs].filter(Boolean).join("  |  ");
+}
+
 const fmtDate = (iso) => {
   const d = new Date(iso);
   return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`;
@@ -78,7 +177,9 @@ function startDraft() {
   };
   if (v) for (const m of state.members.filter((x) => x.version_id === v.id))
     draft.assign[m.student_id] = m.cell_id;
+  draft.orig = { ...draft.assign };      // 지난 버전과 비교해 «옮겨진 아이» 를 표시하려고
   past = []; future = [];
+  keepDraft();
 }
 export const isEditing = () => !!draft;
 const dCells = () => [...draft.cells].sort((a, b) => a.sort_order - b.sort_order);
@@ -89,11 +190,29 @@ const dCellOf = (sid) => draft.assign[sid] || null;
 //  화면
 // ════════════════════════════════════════════════════════════
 export function html() {
-  if (draft) return editHtml();
+  clearSibCache();
+  if (draft) { keepDraft(); return editHtml(); }
+
+  const kept = isLoggedIn() ? storedDraft() : null;
+  const resumeBox = kept ? `
+  <div class="card card-pad" style="margin-bottom:16px;border-color:var(--warning);
+       display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <span class="badge orange">짜던 편성 있음</span>
+    <span style="font-size:13.5px">
+      <b>${esc(kept.label || "이름 없음")}</b> 편성을 만들다 멈추셨습니다
+      ${kept.savedAt ? ` · ${esc(fmtDateTime(kept.savedAt))}` : ""}
+      <div style="color:var(--text-muted);font-size:12.5px;margin-top:2px">
+        아직 저장 전이라 다른 선생님에게는 보이지 않습니다.</div>
+    </span>
+    <span style="margin-left:auto;display:flex;gap:6px">
+      <button class="btn btn-primary btn-sm" id="resumeDraft">이어서 하기</button>
+      <button class="btn btn-sm btn-danger" id="dropDraft">버리기</button>
+    </span>
+  </div>` : "";
 
   const v = currentVersion();
   if (!v) {
-    return `
+    return `${resumeBox}
     <div class="page-head"><div><h1>셀편성</h1><p>아직 등록된 셀편성이 없습니다.</p></div></div>
     <div class="card card-pad"><div class="empty">
       ${isLoggedIn()
@@ -111,7 +230,7 @@ export function html() {
   const unassigned = state.students.filter((s) => isActive(s) && !cellIdOf(s.id, v.id));
   const edited = v.updated_at && v.updated_at !== v.created_at;
 
-  return `
+  return `${resumeBox}
   <div class="page-head">
     <div>
       <h1>셀편성</h1>
@@ -144,7 +263,7 @@ export function html() {
   </div>
 
   <div class="grid grid-auto">
-    ${cells.map((c) => cellCard({ ...c, key: c.id }, visibleMembers(c.id, isLatest), false)).join("")}
+    ${myFirst(cells).map((c) => cellCard({ ...c, key: c.id }, visibleMembers(c.id, isLatest), false)).join("")}
     ${unassigned.length
       ? cellCard({ key: "__none", name: "미배정", kind: "기타", leaders: [] }, unassigned, false)
       : ""}
@@ -187,9 +306,34 @@ function editHtml() {
     </div>
   </div>
 
-  <div class="grid grid-auto">
-    ${cells.map((c) => cellCard(c, dMembers(c.key), true)).join("")}
-    ${cellCard({ key: "__none", name: "미배정", kind: "기타", leaders: [] }, unassigned, true)}
+  <div class="card unassigned-tray droppable" data-cell="__none">
+    <div class="tray-head">
+      <b>미배정</b>
+      <span class="badge ${unassigned.length ? "warn" : "good"}">${unassigned.length}명</span>
+      <span class="tray-hint">여기로 끌어다 놓으면 셀에서 빠집니다 · 여기서 셀로 끌어다 넣으세요</span>
+    </div>
+    <div class="tray-body">
+      ${unassigned.length ? unassigned
+        .sort((a, b) => gradeRank(gradeOf(a)) - gradeRank(gradeOf(b)) || a.name.localeCompare(b.name, "ko"))
+        .map((s) => `
+        <span class="chip" data-student="${s.id}" draggable="true"
+              data-school="${esc(nk(s.school))}" data-sibs="${esc(siblingsOf(s.id).map((x) => x.id).join(" "))}"
+              title="끌어서 셀에 넣으세요">
+          ${avatar(s.name, photoOf(s.id), 20)}
+          <b>${esc(s.name)}</b>
+          <i>${esc(gradeOf(s) || "")}</i>
+        </span>`).join("")
+        : `<span class="tray-empty">전원 배정 완료 ✔</span>`}
+    </div>
+  </div>
+
+  <div class="grid grid-auto" id="cellGrid">
+    ${myFirst(cells).map((c) => cellCard(c, dMembers(c.key), true)).join("")}
+    <button type="button" class="card add-cell-card" id="addCellBottom">
+      <span class="plus">＋</span>
+      <b>셀 추가</b>
+      <span class="sub">담당 선생님 이름으로 새 셀을 만듭니다</span>
+    </button>
   </div>`;
 }
 
@@ -197,27 +341,26 @@ function cellCard(c, members, editing) {
   const special = c.kind !== "셀";
   members = [...members].sort(
     (a, b) => gradeRank(gradeOf(a)) - gradeRank(gradeOf(b)) || a.name.localeCompare(b.name, "ko"));
+  const stats = editing && members.length ? cellStats(members) : "";
   return `
-  <section class="card cell-card" data-cell="${esc(c.key)}">
+  <section class="card cell-card${editing ? " droppable" : ""}${isMyCell(c) ? " mine" : ""}"
+           data-cell="${esc(c.key)}">
     <div class="cell-top">
-      <div>
+      <div style="min-width:0">
         <h4>${esc(c.name)}</h4>
         ${c.leaders?.length
           ? `<div style="font-size:12px;color:var(--text-muted)">${esc(c.leaders.join(" · "))}</div>` : ""}
+        ${stats ? `<div class="cell-stats">${esc(stats)}</div>` : ""}
       </div>
-      <span class="badge ${special ? "warn" : "blue"}">${members.length}명</span>
+      <span style="display:flex;gap:5px;align-items:center;flex:0 0 auto">
+        ${isMyCell(c) ? '<span class="badge good" title="로그인한 내가 담당하는 셀입니다">내 셀</span>' : ""}
+        <span class="badge ${special ? "warn" : "blue"}">${members.length}명</span>
+      </span>
     </div>
-    ${members.length ? `<ul>${members.map((s) => `
-      <li data-student="${s.id}">
-        ${avatar(s.name, photoOf(s.id), 22)}
-        <span>${esc(s.name)}</span>
-        ${s.is_promoted ? '<span class="badge blue" title="초등부 하늘아이에서 올라온 아이">하늘아이</span>' : ""}
-        <span class="g"${gradeOf(s) ? ` title="${esc(gradeWithYear(s))}"` : ""}>${esc(gradeOf(s) || "")}</span>
-        ${editing ? `<button class="icon-btn" data-move="${s.id}" title="셀 옮기기"
-                       style="width:24px;height:24px;font-size:12px">⇄</button>` : ""}
-      </li>`).join("")}</ul>`
+    ${members.length ? `<ul>${members.map((s) => studentRow(s, editing)).join("")}</ul>`
       : `<div class="empty" style="padding:24px 0;font-size:13px">
-           ${editing && c.key === "__none" ? "전원 배정 완료" : "배정된 학생이 없습니다."}</div>`}
+           ${editing ? (c.key === "__none" ? "전원 배정 완료" : "여기로 끌어다 놓으세요")
+                     : "배정된 학생이 없습니다."}</div>`}
     ${editing && c.key !== "__none" ? `
       <div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" data-add-member="${c.key}">＋ 학생 배정</button>
@@ -225,6 +368,43 @@ function cellCard(c, members, editing) {
         <button class="btn btn-ghost btn-sm btn-danger" data-del-cell="${c.key}">셀 삭제</button>
       </div>` : ""}
   </section>`;
+}
+
+/** 셀 카드 안의 학생 한 줄 */
+function studentRow(s, editing) {
+  if (!editing) {
+    return `
+    <li data-student="${s.id}">
+      ${avatar(s.name, photoOf(s.id), 22)}
+      <span>${esc(s.name)}</span>
+      ${s.is_promoted ? '<span class="badge blue" title="초등부 하늘아이에서 올라온 아이">하늘아이</span>' : ""}
+      <span class="g"${gradeOf(s) ? ` title="${esc(gradeWithYear(s))}"` : ""}>${esc(gradeOf(s) || "")}</span>
+    </li>`;
+  }
+  const sibs = siblingsOf(s.id);
+  const moved = draft && (draft.orig?.[s.id] ?? null) !== (draft.assign[s.id] ?? null);
+  // 한 줄에 다 들어가도록 배지 대신 잔글씨로 (마우스를 올리면 자세한 설명이 뜹니다)
+  const meta = [
+    s.gender, ageOf(s), shortSchool(s.school),
+    s.is_promoted ? "하늘아이" : "",
+    sibs.length ? `남매 ${sibs.map((x) => x.name).join("·")}` : "",
+  ].filter(Boolean).join(" · ");
+  return `
+  <li data-student="${s.id}" draggable="true"
+      data-school="${esc(nk(s.school))}" data-sibs="${esc(sibs.map((x) => x.id).join(" "))}">
+    <span class="grip" title="끌어서 다른 셀로 옮기기">⠿</span>
+    ${avatar(s.name, photoOf(s.id), 24)}
+    <div class="who">
+      <div class="line1">
+        <b>${esc(s.name)}</b>
+        ${moved ? '<span class="badge orange" title="지난 편성에서 옮겨졌습니다">이동</span>' : ""}
+      </div>
+      ${meta ? `<div class="line2" title="${esc(meta)}">${esc(meta)}</div>` : ""}
+    </div>
+    <span class="g"${gradeOf(s) ? ` title="${esc(gradeWithYear(s))}"` : ""}>${esc(gradeOf(s) || "")}</span>
+    <button class="icon-btn" data-move="${s.id}" title="셀 옮기기 (휴대폰용)"
+            style="width:24px;height:24px;font-size:12px">⇄</button>
+  </li>`;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -241,6 +421,14 @@ export function mount(root, rerender) {
     await exportCurrentVersion();
   });
   root.querySelector("#editBtn")?.addEventListener("click", () => { startDraft(); rerender(); });
+  root.querySelector("#resumeDraft")?.addEventListener("click", () => {
+    if (resumeDraft()) { toast("짜던 편성을 불러왔습니다."); rerender(); }
+    else toast("불러올 편성을 찾지 못했습니다.", "err");
+  });
+  root.querySelector("#dropDraft")?.addEventListener("click", async () => {
+    if (!(await confirmDialog("짜던 편성을 버릴까요? 되돌릴 수 없습니다.", { okText: "버리기" }))) return;
+    forgetDraft(); rerender(); toast("버렸습니다.");
+  });
 
   // ── 편집 모드 ──
   root.querySelector("#cancelEdit")?.addEventListener("click", async () => {
@@ -253,6 +441,8 @@ export function mount(root, rerender) {
   root.querySelector("#redoBtn")?.addEventListener("click", () => redo(rerender));
   bindShortcuts(rerender);
   root.querySelector("#addCell")?.addEventListener("click", () => editCell(null, rerender));
+  root.querySelector("#addCellBottom")?.addEventListener("click", () => editCell(null, rerender));
+  if (draft) bindDragDrop(root, rerender);
 
   root.querySelectorAll("[data-student]").forEach((li) => li.addEventListener("click", (e) => {
     if (e.target.closest("[data-move]")) return;
@@ -274,8 +464,74 @@ export function mount(root, rerender) {
     pushHistory();
     draft.cells = draft.cells.filter((x) => x.key !== c.key);
     for (const [sid, k] of Object.entries(draft.assign)) if (k === c.key) draft.assign[sid] = null;
-    rerender();
+    keepDraft(); rerender();
   }));
+}
+
+// ── 마우스로 끌어 옮기기 ──────────────────────────────────
+//   · 학생 줄을 잡아서 다른 셀 카드 위에 놓으면 배정이 바뀝니다.
+//   · 되돌리기(30단계)와 그대로 연결됩니다.
+//   · 휴대폰처럼 끌기가 어려운 곳에서는 ⇄ 버튼을 쓰시면 됩니다.
+function bindDragDrop(root, rerender) {
+  let dragId = null;
+
+  root.querySelectorAll("[data-student][draggable]").forEach((li) => {
+    li.addEventListener("dragstart", (e) => {
+      dragId = li.dataset.student;
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", dragId); } catch {}
+      li.classList.add("dragging");
+      root.querySelectorAll(".droppable").forEach((c) => c.classList.add("drop-ready"));
+    });
+    li.addEventListener("dragend", () => {
+      dragId = null;
+      li.classList.remove("dragging");
+      root.querySelectorAll(".droppable").forEach((c) =>
+        c.classList.remove("drop-ready", "drop-over"));
+    });
+
+    // 마우스를 올리면 형제자매·같은 학교 아이를 함께 밝혀 줍니다
+    li.addEventListener("mouseenter", () => {
+      const sibs = (li.dataset.sibs || "").split(" ").filter(Boolean);
+      const school = li.dataset.school;
+      root.querySelectorAll("[data-student]").forEach((o) => {
+        if (o === li) return;
+        if (sibs.includes(o.dataset.student)) o.classList.add("hl-sib");
+        else if (school && o.dataset.school === school) o.classList.add("hl-school");
+      });
+    });
+    li.addEventListener("mouseleave", () => {
+      root.querySelectorAll(".hl-sib, .hl-school").forEach((o) =>
+        o.classList.remove("hl-sib", "hl-school"));
+    });
+  });
+
+  root.querySelectorAll(".droppable").forEach((card) => {
+    card.addEventListener("dragover", (e) => {
+      if (!dragId) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      card.classList.add("drop-over");
+    });
+    card.addEventListener("dragleave", (e) => {
+      if (!card.contains(e.relatedTarget)) card.classList.remove("drop-over");
+    });
+    card.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const sid = dragId || e.dataTransfer.getData("text/plain");
+      card.classList.remove("drop-over");
+      if (!sid) return;
+      const key = card.dataset.cell === "__none" ? null : card.dataset.cell;
+      if ((draft.assign[sid] || null) === key) return;      // 제자리면 아무 일 없음
+      pushHistory();
+      draft.assign[sid] = key;
+      keepDraft();
+      const who = state.students.find((x) => x.id === sid);
+      const to = key ? draft.cells.find((c) => c.key === key)?.name : "미배정";
+      rerender();
+      toast(`${who?.name || ""} → ${to}`);
+    });
+  });
 }
 
 // ── 저장 (여기서 비로소 버전이 기록됩니다) ────────────────
@@ -354,7 +610,7 @@ function saveDraft(after) {
 
           await api.refresh();
           state.versionId = versionId;
-          draft = null; past = []; future = [];
+          draft = null; past = []; future = []; forgetDraft();
           close(); after?.();
           toast(mode === "overwrite" ? "현재 버전에 저장했습니다." : "새 버전으로 저장했습니다.");
         } catch (err) {
@@ -424,7 +680,7 @@ function editCell(c, after) {
           leaders: fd.leaders.split(",").map((x) => x.trim()).filter(Boolean),
         });
         if (isNew) draft.cells.push(c);
-        close(); after?.();
+        keepDraft(); close(); after?.();
       });
     },
   });
@@ -455,6 +711,7 @@ export function moveStudent(s, after) {
         e.preventDefault();
         pushHistory();
         draft.assign[s.id] = new FormData(form).get("cell") || null;
+        keepDraft();
         close();
         if (location.hash !== "#/cells") location.hash = "#/cells"; else after?.();
       });
@@ -491,6 +748,7 @@ function addMembers(cellKey, after) {
         if (picked.length) {
           pushHistory();
           for (const i of picked) draft.assign[i.value] = cellKey;
+          keepDraft();
         }
         close(); after?.();
       });
@@ -498,8 +756,11 @@ function addMembers(cellKey, after) {
   });
 }
 
-/** 다른 화면으로 이동할 때 편집 초안을 정리 */
-export function discardDraft() { draft = null; past = []; future = []; }
+/** 편집을 완전히 그만둡니다 (취소·저장 완료) — 보관해 둔 것도 지웁니다. */
+export function discardDraft() { draft = null; past = []; future = []; forgetDraft(); }
+/** 화면만 잠깐 떠날 때 — 편집 상태는 그대로 두고 보관만 해둡니다.
+ *  (주소록 보러 갔다 와도 짜던 게 그대로 있습니다. 창을 닫으면 «이어서 하기» 로 복구) */
+export function parkDraft() { keepDraft(); }
 
 // ── 키보드 단축키 (Ctrl/⌘ + Z, Ctrl/⌘ + Shift + Z, Ctrl/⌘ + Y) ──
 let shortcutHandler = null;

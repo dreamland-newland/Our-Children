@@ -23,6 +23,7 @@ export function html() {
          생년월일 기준으로 자동 정리됩니다.</p>
     </div>
     <div class="page-actions">
+      <button class="btn btn-primary btn-sm" id="jumpNow">📅 이번 달(${M}월)로 가기</button>
       <select id="who" style="width:auto">
         <option value="all"${filter === "all" ? " selected" : ""}>전체</option>
         <option value="student"${filter === "student" ? " selected" : ""}>학생만</option>
@@ -36,7 +37,7 @@ export function html() {
     ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
       const rows = list.filter((b) => b.month === m);
       return `
-      <section class="card month-card${m === M ? " now" : ""}">
+      <section class="card month-card${m === M ? " now" : ""}"${m === M ? ' id="nowMonth"' : ""}>
         <div class="m-head">
           <b>${m}월</b>
           <span style="font-size:12px;color:var(--text-muted)">${rows.length}명</span>
@@ -65,6 +66,14 @@ export function html() {
 }
 
 export function mount(root, rerender) {
+  const jump = () => {
+    const el = root.querySelector("#nowMonth");
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("flash");
+    setTimeout(() => el.classList.remove("flash"), 1400);
+  };
+  root.querySelector("#jumpNow")?.addEventListener("click", jump);
   root.querySelector("#who").addEventListener("change", (e) => { filter = e.target.value; rerender(); });
   root.querySelectorAll("[data-student]").forEach((li) => li.addEventListener("click", () =>
     showStudent(state.students.find((s) => s.id === li.dataset.student), rerender)));
