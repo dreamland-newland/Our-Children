@@ -75,6 +75,7 @@ function render() {
 }
 
 window.addEventListener("hashchange", () => {
+  syncTopButton();
   resetSignup();
   if (location.hash !== "#/cells") cells.parkDraft();
   render();
@@ -155,8 +156,36 @@ function renderBanner() {
     return;
   }
   installTelCopy();
+  installTopButton();
   renderBanner();
   render();
 })();
 
 export { isAdmin };
+
+
+// ── 맨 위로 가기 (생일 화면에서만, 조금 내려가면 나타납니다) ──
+//   12칸이 세로로 길게 늘어서는 생일 화면에서만 필요해서 거기만 붙입니다.
+const TOP_BTN_PAGES = ["#/birthdays"];
+let topBtn = null;
+function installTopButton() {
+  if (!topBtn) {
+    topBtn = document.createElement("button");
+    topBtn.id = "toTop";
+    topBtn.className = "to-top";
+    topBtn.type = "button";
+    topBtn.setAttribute("aria-label", "맨 위로");
+    topBtn.title = "맨 위로";
+    topBtn.textContent = "↑";
+    topBtn.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+    document.body.appendChild(topBtn);
+    window.addEventListener("scroll", syncTopButton, { passive: true });
+  }
+  syncTopButton();
+}
+function syncTopButton() {
+  if (!topBtn) return;
+  const here = location.hash || "#/";
+  const show = TOP_BTN_PAGES.includes(here) && window.scrollY > 260;
+  topBtn.classList.toggle("on", show);
+}

@@ -1,6 +1,6 @@
 // ── 교사 / 간사 연락처 ─────────────────────────────────────
 import { state, api, isLoggedIn, isAdmin } from "../data.js";
-import { esc, dash, telLink, fmtBirth, modal, toast, confirmDialog, downloadCSV, avatar } from "../ui.js";
+import { esc, dash, telLink, fmtBirth, modal, toast, confirmDialog, avatar } from "../ui.js";
 
 const ROLES = ["교역자", "사모", "교사", "간사"];
 
@@ -15,7 +15,7 @@ export function html() {
       <p>${rows.length}명 · ${claimed}명 계정 연결됨 · 가입은 <b>관리자 승인</b>으로 열립니다.</p>
     </div>
     <div class="page-actions">
-      <button class="btn btn-sm" id="csvBtn">CSV 내려받기</button>
+      <button class="btn btn-sm" id="csvBtn">📥 엑셀 받기</button>
       ${isAdmin() ? `<button class="btn btn-sm${state.pendingCount ? " btn-primary" : ""}" id="accounts">
                        👥 가입 승인 · 계정${state.pendingCount
                          ? ` <span class="badge orange" style="margin-left:2px">${state.pendingCount}</span>` : ""}</button>
@@ -72,13 +72,13 @@ export function mount(root, rerender) {
   root.querySelector("#addBtn")?.addEventListener("click", () => editTeacher(null, rerender));
   root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () =>
     editTeacher(state.teachers.find((t) => t.id === b.dataset.edit), rerender)));
-  root.querySelector("#csvBtn").addEventListener("click", () => {
-    downloadCSV("꿈땅새땅_교사간사연락처.csv", ["연번", "이름", "구분", "생년월일", "전화번호", "비고"],
-      state.teachers.map((t) => [t.seq, t.name, t.role, t.birth || t.birth_md || "",
-        isLoggedIn() ? t.phone : "", isLoggedIn() ? t.note : ""]));
-    toast(isLoggedIn() ? "CSV 파일을 내려받았습니다."
-                       : "전화번호를 뺀 명단을 내려받았습니다. 전체는 로그인 후 받을 수 있습니다.");
+  root.querySelector("#csvBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = "만드는 중…";
+    try { const { exportTeachers } = await import("../xlsx.js"); await exportTeachers({ masked: !isLoggedIn() }); }
+    finally { btn.disabled = false; btn.textContent = "📥 엑셀 받기"; }
   });
+
 }
 
 // ── 관리자: 가입 승인 · 계정 · 관리자 권한 ──────────────────

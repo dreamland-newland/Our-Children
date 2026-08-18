@@ -202,6 +202,148 @@ export function resizeImage(file, size = 400, quality = 0.85) {
     img.src = url;
   });
 }
+/** 사진에서 쓸 부분을 네모로 잘라내는 창.
+ *  · 사진 전체가 보이고, 그 위에 «자를 네모» 가 얹힙니다.
+ *  · 네모 안을 끌면 위치가, 네 귀퉁이를 끌면 크기가 바뀝니다 (정사각형 유지).
+ *  · «적용» 을 누르면 그 부분만 잘린 JPEG 한 장이 나옵니다. 취소하면 null.
+ */
+export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
+  if (!/^image\//.test(file.type)) throw new Error("이미지 파일만 올릴 수 있습니다.");
+  const src = await loadUpright(file);          // 휴대폰 사진 회전 먼저 반영
+
+  return new Promise((resolve) => {
+    // 사진 전체가 들어가도록 축소해서 보여 줍니다
+    const MAX = Math.min(320, Math.max(240, Math.round(window.innerWidth * 0.72)));
+    const scale = Math.min(MAX / src.width, MAX / src.height, 1);
+    const dw = Math.round(src.width * scale), dh = Math.round(src.height * scale);
+    const MIN = 44;                              // 자를 네모의 최소 크기
+    let fs = Math.round(Math.min(dw, dh) * 0.85);   // frame size
+    let fx = Math.round((dw - fs) / 2), fy = Math.round((dh - fs) / 2);
+    let done = false;
+
+    const wrap = document.createElement("div");
+    wrap.innerHTML = `
+      <div class="crop-stage">
+        <div class="crop-area" id="cropArea" style="width:${dw}px;height:${dh}px">
+          <img id="cropImg" alt="" draggable="false" style="width:${dw}px;height:${dh}px">
+          <div class="crop-dim" id="cropDim"></div>
+          <div class="crop-frame" id="cropFrame">
+            <i class="hd nw" data-h="nw"></i><i class="hd ne" data-h="ne"></i>
+            <i class="hd sw" data-h="sw"></i><i class="hd se" data-h="se"></i>
+          </div>
+        </div>
+      </div>
+      <div class="form-note" style="margin-top:12px">
+        네모 <b>안쪽을 끌면</b> 위치가, <b>귀퉁이를 끌면</b> 크기가 바뀝니다.
+        네모 안이 프로필 사진이 됩니다.
+      </div>
+      <div class="crop-tools">
+        <button type="button" class="btn btn-sm" id="cropAll">전체</button>
+        <button type="button" class="btn btn-sm" id="cropSquare">가운데 정사각형</button>
+      </div>`;
+
+    const imgEl = wrap.querySelector("#cropImg");
+    const frame = wrap.querySelector("#cropFrame");
+    const dim = wrap.querySelector("#cropDim");
+    const area = wrap.querySelector("#cropArea");
+    imgEl.src = src.url;
+
+    const draw = () => {
+      fs = Math.max(MIN, Math.min(fs, dw, dh));
+      fx = Math.max(0, Math.min(dw - fs, fx));
+      fy = Math.max(0, Math.min(dh - fs, fy));
+      frame.style.cssText = `left:${fx}px;top:${fy}px;width:${fs}px;height:${fs}px`;
+      // 바깥을 어둡게 (네모만 뚫린 마스크)
+      dim.style.clipPath =
+        `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0,` +
+        ` ${fx}px ${fy}px, ${fx}px ${fy + fs}px,` +
+        ` ${fx + fs}px ${fy + fs}px, ${fx + fs}px ${fy}px, ${fx}px ${fy}px)`;
+    };
+    draw();
+
+    // ── 끌기 (안쪽=이동, 귀퉁이=크기) ──
+    let mode = null, st = null;
+    const start = (e) => {
+      const h = e.target.dataset?.h;
+      mode = h || "move";
+      st = { x: e.clientX, y: e.clientY, fx, fy, fs };
+      area.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    };
+    frame.addEventListener("pointerdown", start);
+    area.addEventListener("pointermove", (e) => {
+      if (!mode) return;
+      const dx = e.clientX - st.x, dy = e.clientY - st.y;
+      if (mode === "move") { fx = st.fx + dx; fy = st.fy + dy; }
+      else {
+        // 반대쪽 귀퉁이를 고정한 채 정사각형으로 늘리고 줄입니다
+        const right = st.fx + st.fs, bottom = st.fy + st.fs;
+        let n = st.fs;
+        if (mode === "se") n = st.fs + Math.max(dx, dy);
+        if (mode === "nw") n = st.fs - Math.min(dx, dy);
+        if (mode === "ne") n = st.fs + Math.max(dx, -dy);
+        if (mode === "sw") n = st.fs + Math.max(-dx, dy);
+        n = Math.max(MIN, n);
+        if (mode === "se") n = Math.min(n, dw - st.fx, dh - st.fy);
+        if (mode === "nw") { n = Math.min(n, right, bottom); fx = right - n; fy = bottom - n; }
+        if (mode === "ne") { n = Math.min(n, dw - st.fx, bottom); fy = bottom - n; }
+        if (mode === "sw") { n = Math.min(n, right, dh - st.fy); fx = right - n; }
+        fs = n;
+      }
+      draw();
+    });
+    const end = () => { mode = null; };
+    area.addEventListener("pointerup", end);
+    area.addEventListener("pointercancel", end);
+
+    wrap.querySelector("#cropAll").addEventListener("click", () => {
+      fs = Math.min(dw, dh); fx = (dw - fs) / 2; fy = (dh - fs) / 2; draw();
+    });
+    wrap.querySelector("#cropSquare").addEventListener("click", () => {
+      fs = Math.round(Math.min(dw, dh) * 0.7); fx = (dw - fs) / 2; fy = (dh - fs) / 2; draw();
+    });
+
+    const close = modal({
+      title: "사진 자르기", narrow: true, body: wrap,
+      footer: `<button class="btn" data-close>취소</button>
+               <button class="btn btn-primary" id="cropOk">적용</button>`,
+      onMount(box) {
+        box.querySelector("#cropOk").addEventListener("click", () => {
+          const cv = document.createElement("canvas");
+          cv.width = cv.height = size;
+          const ctx = cv.getContext("2d");
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(src.bitmap, fx / scale, fy / scale, fs / scale, fs / scale, 0, 0, size, size);
+          cv.toBlob((blob) => {
+            done = true; src.release(); close(); resolve(blob || null);
+          }, "image/jpeg", quality);
+        });
+      },
+    });
+
+    const watch = setInterval(() => {          // 취소로 닫혔을 때
+      if (document.body.contains(wrap)) return;
+      clearInterval(watch);
+      if (!done) { src.release(); resolve(null); }
+    }, 200);
+  });
+}
+
+/** 회전 정보(EXIF)를 반영해 똑바로 세운 이미지 */
+async function loadUpright(file) {
+  let bitmap;
+  try { bitmap = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch { bitmap = await createImageBitmap(file); }
+  const cv = document.createElement("canvas");
+  cv.width = bitmap.width; cv.height = bitmap.height;
+  cv.getContext("2d").drawImage(bitmap, 0, 0);
+  const url = cv.toDataURL("image/jpeg", 0.92);
+  return {
+    width: bitmap.width, height: bitmap.height, bitmap, url,
+    release() { bitmap.close?.(); },
+  };
+}
+
 export const blobToDataURL = (blob) => new Promise((res, rej) => {
   const r = new FileReader();
   r.onload = () => res(r.result);

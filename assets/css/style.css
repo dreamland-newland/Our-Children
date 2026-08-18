@@ -344,6 +344,16 @@ table.data .num { font-variant-numeric: tabular-nums; color: var(--text-secondar
   box-shadow: inset 3px 0 0 var(--series-1);
 }
 
+/* ── 임시저장 목록 ──────────────────────────────────────── */
+.slot-list { display: flex; flex-direction: column; }
+.slot-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 11px 20px; border-bottom: 1px solid var(--grid);
+}
+.slot-row:last-child { border-bottom: 0; }
+.slot-row b { font-size: 14px; font-weight: 620; }
+.slot-row .slot-sub { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+
 /* ── 위에 붙어 있는 «미배정» 트레이 ─────────────────────── */
 .unassigned-tray {
   position: sticky; top: 62px; z-index: 20; margin-bottom: 16px;
@@ -536,3 +546,54 @@ a.tel { color: var(--series-1); }
 }
 .contact-row + .contact-row { border-top: 1px solid var(--grid); }
 .contact-row a.tel { font-weight: 600; }
+
+/* ── 맨 위로 가기 (플로팅) ──────────────────────────────── */
+.to-top {
+  position: fixed; right: 16px; bottom: 18px; z-index: 60;
+  width: 46px; height: 46px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer;
+  font-size: 20px; line-height: 1; font-family: inherit;
+  color: var(--surface); background: var(--text-primary);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
+  opacity: 0; transform: translateY(10px) scale(.9); pointer-events: none;
+  transition: opacity .16s, transform .16s;
+}
+.to-top.on { opacity: .92; transform: none; pointer-events: auto; }
+.to-top:hover { opacity: 1; }
+@supports (padding: env(safe-area-inset-bottom)) {
+  .to-top { bottom: calc(18px + env(safe-area-inset-bottom)); }
+}
+
+/* ── 사진 자르기 창 ─────────────────────────────────────── */
+.crop-stage { display: grid; place-items: center; padding: 2px 0 12px; }
+.crop-area {
+  position: relative; overflow: hidden; border-radius: 10px;
+  background: var(--surface-2); touch-action: none; user-select: none;
+}
+.crop-area img { display: block; max-width: none; pointer-events: none; }
+.crop-dim {
+  position: absolute; inset: 0; pointer-events: none;
+  background: rgba(0, 0, 0, .5);
+}
+.crop-frame {
+  position: absolute; cursor: move;
+  border: 1.5px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
+}
+/* 삼분할 안내선 */
+.crop-frame::before, .crop-frame::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  border-style: dashed; border-color: rgba(255, 255, 255, .5);
+}
+.crop-frame::before { border-width: 1px 0; top: 33.33%; bottom: 33.33%; }
+.crop-frame::after  { border-width: 0 1px; left: 33.33%; right: 33.33%; }
+.crop-frame .hd {
+  position: absolute; width: 22px; height: 22px; box-sizing: border-box;
+  border: 3px solid #fff; background: transparent;
+}
+.crop-frame .hd.nw { left: -2px;  top: -2px;    border-right: 0; border-bottom: 0; cursor: nwse-resize; }
+.crop-frame .hd.ne { right: -2px; top: -2px;    border-left: 0;  border-bottom: 0; cursor: nesw-resize; }
+.crop-frame .hd.sw { left: -2px;  bottom: -2px; border-right: 0; border-top: 0;    cursor: nesw-resize; }
+.crop-frame .hd.se { right: -2px; bottom: -2px; border-left: 0;  border-top: 0;    cursor: nwse-resize; }
+.crop-tools { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }

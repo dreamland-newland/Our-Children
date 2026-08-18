@@ -4,8 +4,8 @@ import {
   gradeOf, statusOf, isAutoGrade, autoGrade, schoolYear, gradeWithYear,
 } from "../data.js";
 import {
-  esc, dash, telLink, fmtBirth, modal, toast, confirmDialog, downloadCSV, byName,
-  avatar, resizeImage,
+  esc, dash, telLink, fmtBirth, modal, toast, confirmDialog, byName,
+  avatar, cropImage,
 } from "../ui.js";
 import { GRADES } from "../config.js";
 import { moveStudent } from "./cells.js";
@@ -23,7 +23,7 @@ export function html() {
         : "이름·학교·전화번호·보호자 이름으로 검색할 수 있습니다."}</p>
     </div>
     <div class="page-actions">
-      <button class="btn btn-sm" id="csvBtn">CSV 내려받기</button>
+      <button class="btn btn-sm" id="csvBtn">📥 엑셀 받기</button>
       ${isLoggedIn() ? `<button class="btn btn-primary btn-sm" id="addBtn">＋ 학생 등록</button>`
                      : `<a class="btn btn-sm" href="#/login">로그인하고 등록하기</a>`}
     </div>
@@ -59,7 +59,14 @@ export function mount(root) {
   root.querySelector("#q").addEventListener("input", (e) => { f.q = e.target.value; rerender(); });
   for (const k of ["grade", "gender", "cell", "status"])
     root.querySelector("#" + k).addEventListener("change", (e) => { f[k] = e.target.value; rerender(); });
-  root.querySelector("#csvBtn").addEventListener("click", () => exportCSV(filtered()));
+  root.querySelector("#csvBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = "만드는 중…";
+    try {
+      const { exportStudentList } = await import("../xlsx.js");
+      await exportStudentList(filtered(), { masked: isMasked(), what: "주소록" });
+    } finally { btn.disabled = false; btn.textContent = "📥 엑셀 받기"; }
+  });
   root.querySelector("#addBtn")?.addEventListener("click", () => editStudent(null, rerender));
   draw(root);
 }
@@ -248,7 +255,7 @@ export function editStudent(s, after) {
           ${photoOf(s.id) ? `<button type="button" class="btn btn-sm btn-danger" id="dropPhoto">사진 지우기</button>` : ""}
         </div>
         <div class="hintbox" style="margin-top:6px">
-          정사각형으로 잘라 400px 로 줄여 올립니다.<br>
+          사진을 고르면 <b>위치와 크기를 맞추는 창</b>이 열립니다.<br>
           사진은 <b>로그인한 교사진에게만</b> 보입니다.
         </div>
       </div>
@@ -330,7 +337,8 @@ export function editStudent(s, after) {
         const f = fileEl.files?.[0];
         if (!f) return;
         try {
-          pendingPhoto = await resizeImage(f);
+          pendingPhoto = await cropImage(f);
+          if (!pendingPhoto) { fileEl.value = ""; return; }
           removePhoto = false;
           const { blobToDataURL } = await import("../ui.js");
           boxEl.querySelector(".ava")?.replaceWith(
@@ -376,21 +384,4 @@ const sel = (name, list, cur) =>
   `<select name="${name}">${list.map((v) =>
     `<option value="${esc(v)}"${(cur || "") === v ? " selected" : ""}>${esc(v || "선택 안 함")}</option>`).join("")}</select>`;
 
-function exportCSV(rows) {
-  const file = `꿈땅새땅_주소록_${new Date().toISOString().slice(0, 10)}.csv`;
-  if (isMasked()) {
-    downloadCSV(file, ["연번", "이름", "성별", "학년", "학교", "생년월일", "셀", "상태", "하늘아이"],
-      rows.map((s) => [s.seq, s.name, s.gender, gradeOf(s), s.school, s.birth,
-        cellNameOf(s.id) || "", statusOf(s), s.is_promoted ? "O" : ""]));
-    toast("연락처·주소를 뺀 명단을 내려받았습니다. 전체는 로그인 후 받을 수 있습니다.");
-    return;
-  }
-  downloadCSV(file,
-    ["연번","이름","성별","학년","학교","생년월일","전화번호","어머니성함","어머니연락처",
-     "아버지성함","아버지연락처","형제관계","집주소","셀","상태","하늘아이","특이사항"],
-    rows.map((s) => [s.seq, s.name, s.gender, gradeOf(s), s.school, s.birth, s.phone,
-      s.mother_name, s.mother_phone, s.father_name, s.father_phone, s.siblings, s.address,
-      cellNameOf(s.id) || "", statusOf(s), s.is_promoted ? "O" : "", s.note]));
-  toast("CSV 파일을 내려받았습니다.");
-}
 

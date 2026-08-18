@@ -157,6 +157,90 @@ export async function exportCurrentVersion() {
   }
 }
 
+// ── 화면별 «지금 보이는 것» 내려받기 ──────────────────────
+//   버튼 이름을 «📥 엑셀 받기» 로 통일했습니다 (CSV 대신).
+//   isMasked 상태(비로그인)면 연락처 열은 아예 빼고 만듭니다.
+
+/** 주소록 — 지금 화면의 걸러진 목록 그대로 */
+export async function exportStudentList(rows, { masked = false, what = "주소록" } = {}) {
+  try {
+    const X = await loadXLSX();
+    const wb = X.utils.book_new();
+    const head = masked
+      ? ["연번", "이름", "성별", "학년", "학교", "생년월일", "셀", "상태", "하늘아이"]
+      : ["연번", "이름", "성별", "학년", "학교", "생년월일", "전화번호",
+         "어머니성함", "어머니연락처", "아버지성함", "아버지연락처",
+         "형제관계", "집주소", "비고(특이사항)", "셀", "상태", "하늘아이"];
+    const body = rows.map((s, i) => masked
+      ? [s.seq ?? i + 1, s.name, s.gender, gradeOf(s), s.school, birthCell(s),
+         cellNameOf(s.id) || "", statusOf(s), s.is_promoted ? "O" : ""]
+      : [s.seq ?? i + 1, s.name, s.gender, gradeOf(s), s.school, birthCell(s), s.phone,
+         s.mother_name, s.mother_phone, s.father_name, s.father_phone,
+         s.siblings, s.address, s.note, cellNameOf(s.id) || "", statusOf(s),
+         s.is_promoted ? "O" : ""]);
+    add(X, wb, what, [
+      [`${GROUP_NAME} ${what}`, `${rows.length}명`, `${today()} 기준`],
+      [],
+      head, ...body,
+    ], masked ? [6, 10, 6, 8, 14, 12, 16, 10, 8]
+              : [6, 10, 6, 8, 14, 12, 15, 10, 15, 10, 15, 14, 34, 24, 16, 10, 8]);
+    saveWorkbook(X, wb, `${GROUP_NAME}_${what}_${today()}.xlsx`);
+    toast(masked ? "연락처를 뺀 명단을 내려받았습니다. 전체는 로그인 후 받을 수 있습니다."
+                 : "엑셀로 내려받았습니다.");
+  } catch (e) {
+    console.error(e);
+    toast("엑셀을 만들지 못했습니다: " + e.message, "err");
+  }
+}
+
+/** 월별 생일명단 */
+export async function exportBirthdays() {
+  try {
+    const X = await loadXLSX();
+    const wb = X.utils.book_new();
+    const bd = birthdayList();
+    const rows = [[`${GROUP_NAME} 월별 생일명단`, `${bd.length}명`, `${today()} 기준`], [],
+                  ["월", "일", "이름", "구분", "학년"]];
+    for (let m = 1; m <= 12; m++) {
+      const list = bd.filter((x) => x.month === m);
+      if (!list.length) continue;
+      list.forEach((x, i) => rows.push([i === 0 ? `${m}월` : "", x.day, x.name, x.kind, x.grade || ""]));
+      rows.push([]);
+    }
+    add(X, wb, "월별생일명단", rows, [8, 6, 12, 10, 10]);
+    saveWorkbook(X, wb, `${GROUP_NAME}_월별생일명단_${today()}.xlsx`);
+    toast("엑셀로 내려받았습니다.");
+  } catch (e) {
+    console.error(e);
+    toast("엑셀을 만들지 못했습니다: " + e.message, "err");
+  }
+}
+
+/** 교사·간사 연락처 */
+export async function exportTeachers({ masked = false } = {}) {
+  try {
+    const X = await loadXLSX();
+    const wb = X.utils.book_new();
+    const head = masked ? ["연번", "이름", "구분", "생일", "계정"]
+                        : ["연번", "이름", "구분", "생년월일", "전화번호", "비고/특이사항", "계정"];
+    const body = [...state.teachers]
+      .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+      .map((t, i) => masked
+        ? [t.seq ?? i + 1, t.name, t.role, t.birth || t.birth_md || "", t.user_id ? "가입" : "미가입"]
+        : [t.seq ?? i + 1, t.name, t.role, t.birth || t.birth_md || "", t.phone || "",
+           t.note || "", t.user_id ? "가입" : "미가입"]);
+    add(X, wb, "교사간사연락처", [
+      [`${GROUP_NAME} 교사·간사 연락처`, `${body.length}명`, `${today()} 기준`], [], head, ...body,
+    ], masked ? [6, 12, 10, 14, 10] : [6, 12, 10, 14, 16, 30, 10]);
+    saveWorkbook(X, wb, `${GROUP_NAME}_교사간사연락처_${today()}.xlsx`);
+    toast(masked ? "전화번호를 뺀 명단을 내려받았습니다. 전체는 로그인 후 받을 수 있습니다."
+                 : "엑셀로 내려받았습니다.");
+  } catch (e) {
+    console.error(e);
+    toast("엑셀을 만들지 못했습니다: " + e.message, "err");
+  }
+}
+
 /** 브라우저에서 안전하게 내려받기 (SheetJS 의 writeFile 대신 Blob 사용) */
 function saveWorkbook(X, wb, filename) {
   const out = X.write(wb, { bookType: "xlsx", type: "array" });

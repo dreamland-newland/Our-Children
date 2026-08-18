@@ -70,6 +70,83 @@ function storedDraft() {
 function forgetDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch {} }
 export const hasKeptDraft = () => !draft && !!storedDraft();
 
+// ── 임시저장 (이름 붙여 여러 개 보관) ──────────────────────
+//   «저장하기» 는 모두가 보는 버전으로 확정하는 것이고,
+//   «임시저장» 은 내 브라우저에만 안(案) 을 쌓아 두는 것입니다.
+const SLOTS_KEY = "kkumttang.cellslots.v1";
+const SLOTS_MAX = 20;
+function readSlots() {
+  try {
+    const a = JSON.parse(localStorage.getItem(SLOTS_KEY) || "[]");
+    return Array.isArray(a) ? a : [];
+  } catch { return []; }
+}
+function writeSlots(list) {
+  try { localStorage.setItem(SLOTS_KEY, JSON.stringify(list.slice(0, SLOTS_MAX))); }
+  catch { toast("브라우저 저장 공간이 부족합니다. 오래된 임시저장을 지워 주세요.", "err"); }
+}
+export const slotCount = () => readSlots().length;
+
+/** 지금 편집 중인 것을 이름을 붙여 임시저장 */
+function saveSlot() {
+  if (!draft) return null;
+  const list = readSlots();
+  const d = new Date();
+  const n = list.length + 1;
+  const item = {
+    id: uid(),
+    name: `모의 ${n}차 (${d.getMonth() + 1}/${d.getDate()})`,
+    savedAt: d.toISOString(),
+    base: draft.base, label: draft.label, note: draft.note,
+    cells: draft.cells, assign: draft.assign, orig: draft.orig || {},
+  };
+  writeSlots([item, ...list]);
+  return item;
+}
+function loadSlot(id) {
+  const it = readSlots().find((x) => x.id === id);
+  if (!it) return false;
+  draft = { base: it.base ?? null, label: it.label || DEFAULT_TERM_LABEL, note: it.note || "",
+            cells: it.cells, assign: it.assign || {}, orig: it.orig || {} };
+  past = []; future = [];
+  keepDraft();
+  return true;
+}
+const renameSlot = (id, name) => {
+  const list = readSlots();
+  const it = list.find((x) => x.id === id);
+  if (it) { it.name = name; writeSlots(list); }
+};
+const deleteSlot = (id) => writeSlots(readSlots().filter((x) => x.id !== id));
+
+/** 임시저장 목록 카드 (조회 화면·편집 화면 공용) */
+function slotsCard() {
+  const list = readSlots();
+  if (!list.length) return "";
+  return `
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-head">
+      <h3>임시저장한 모의편성 <span class="badge">${list.length}</span></h3>
+      <span class="sub">내 브라우저에만 있습니다 · 다른 선생님에게는 보이지 않습니다</span>
+    </div>
+    <div class="slot-list">
+      ${list.map((it) => `
+      <div class="slot-row">
+        <div style="min-width:0;flex:1">
+          <b>${esc(it.name)}</b>
+          <div class="slot-sub">${esc(fmtDateTime(it.savedAt))}
+            · 셀 ${it.cells.length}개
+            · 배정 ${Object.values(it.assign || {}).filter(Boolean).length}명</div>
+        </div>
+        <button class="btn btn-sm btn-primary" data-slot-load="${it.id}">불러오기</button>
+        <button class="btn btn-sm" data-slot-rename="${it.id}">이름 바꾸기</button>
+        <button class="btn btn-sm btn-danger" data-slot-del="${it.id}">삭제</button>
+      </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+
 /** 보관해 둔 편성을 다시 불러옵니다. */
 function resumeDraft() {
   const o = storedDraft();
@@ -139,8 +216,11 @@ function isMyCell(c) {
   const hay = [...(c.leaders || []), c.name].map(nk).join(" ");
   return names.some((n) => n && hay.includes(n));
 }
-/** 내 셀을 맨 앞으로 (표시 순서만 바꿉니다 — 저장되는 순서는 그대로) */
-const myFirst = (list) => [...list].sort((a, b) => (isMyCell(b) ? 1 : 0) - (isMyCell(a) ? 1 : 0));
+/** 보여주는 순서 — 내 셀이 맨 앞, 장기결석·기타는 늘 맨 뒤.
+ *  (표시 순서만 바꿉니다. 저장되는 순서는 건드리지 않습니다.) */
+const dispRank = (c) => (isMyCell(c) ? 0 : c.kind === "셀" ? 1 : 2);
+const myFirst = (list) => [...list].sort(
+  (a, b) => dispRank(a) - dispRank(b) || (a.sort_order || 0) - (b.sort_order || 0));
 
 /** 셀 카드 머리말에 붙는 «남 3 · 여 4 | 중1 2 · 중2 3» 요약 */
 function cellStats(members) {
@@ -210,9 +290,10 @@ export function html() {
     </span>
   </div>` : "";
 
+  const slots = isLoggedIn() ? slotsCard() : "";
   const v = currentVersion();
   if (!v) {
-    return `${resumeBox}
+    return `${resumeBox}${slots}
     <div class="page-head"><div><h1>셀편성</h1><p>아직 등록된 셀편성이 없습니다.</p></div></div>
     <div class="card card-pad"><div class="empty">
       ${isLoggedIn()
@@ -230,7 +311,7 @@ export function html() {
   const unassigned = state.students.filter((s) => isActive(s) && !cellIdOf(s.id, v.id));
   const edited = v.updated_at && v.updated_at !== v.created_at;
 
-  return `${resumeBox}
+  return `${resumeBox}${slots}
   <div class="page-head">
     <div>
       <h1>셀편성</h1>
@@ -243,7 +324,7 @@ export function html() {
           ${esc(versionLabel(x))}</option>`).join("")}
       </select>
       <button class="btn btn-sm" id="xlsxVer">📥 현재 버전 받기</button>
-      ${isLoggedIn() ? `<button class="btn btn-primary btn-sm" id="editBtn">✏️ 편집</button>` : ""}
+      ${isLoggedIn() ? `<button class="btn btn-primary btn-sm" id="editBtn">✏️ 편집 (모의편성)</button>` : ""}
       ${isAdmin() ? `<button class="btn btn-sm btn-danger" id="delVer">버전 삭제</button>` : ""}
     </div>
   </div>
@@ -257,9 +338,16 @@ export function html() {
         v.updated_by_name ? ` · ${esc(v.updated_by_name)}` : ""}` : ""}
       ${v.note ? ` &nbsp;|&nbsp; ${esc(v.note)}` : ""}
     </span>
-    ${state.versions[0]?.id === v.id
-      ? `<span class="badge good" style="margin-left:auto">최신 버전</span>`
-      : `<span class="badge warn" style="margin-left:auto">지난 버전</span>`}
+    <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      ${isLoggedIn() ? `<button class="btn btn-ghost btn-sm" id="renameVer"
+          title="이 편성의 이름과 메모를 고칩니다">✏️ 이름 바꾸기</button>` : ""}
+      ${isLoggedIn() && state.versions[0]?.id !== v.id
+        ? `<button class="btn btn-sm" id="restoreVer"
+             title="이 편성을 그대로 다시 최신 편성으로 만듭니다">↩ 이 편성으로 되돌리기</button>` : ""}
+      ${state.versions[0]?.id === v.id
+        ? `<span class="badge good">최신 버전</span>`
+        : `<span class="badge warn">지난 버전</span>`}
+    </span>
   </div>
 
   <div class="grid grid-auto">
@@ -279,9 +367,9 @@ function editHtml() {
   return `
   <div class="banner setup" style="border-radius:12px;margin-bottom:16px;text-align:left;
        display:flex;gap:12px;align-items:center;flex-wrap:wrap;border:1px solid var(--border)">
-    <b>✏️ 편집 중</b>
-    <span>고친 내용은 <b>저장을 눌러야</b> 버전으로 기록됩니다.
-      되돌리기는 최대 ${HISTORY_MAX}단계까지 가능합니다.</span>
+    <b>✏️ 모의편성 중</b>
+    <span>끌어서 옮겨 보세요. <b>«저장하기»를 눌러야</b> 모두에게 보이는 버전이 됩니다.
+      여러 안을 비교하려면 <b>«임시저장»</b> · 되돌리기 ${HISTORY_MAX}단계.</span>
     <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
       <span style="display:flex;gap:4px">
         <button class="btn btn-sm" id="undoBtn" ${past.length ? "" : "disabled"}
@@ -289,8 +377,9 @@ function editHtml() {
         <button class="btn btn-sm" id="redoBtn" ${future.length ? "" : "disabled"}
           title="다시하기 (Ctrl+Shift+Z)">↷ 다시하기${future.length ? ` <b>${future.length}</b>` : ""}</button>
       </span>
+      <button class="btn btn-sm" id="slotSave" title="내 브라우저에만 안(案)으로 보관합니다">💾 임시저장</button>
       <button class="btn btn-sm" id="cancelEdit">취소</button>
-      <button class="btn btn-primary btn-sm" id="saveEdit">저장하기</button>
+      <button class="btn btn-primary btn-sm" id="saveEdit" title="모두가 보는 버전으로 확정합니다">저장하기</button>
     </span>
   </div>
 
@@ -334,7 +423,9 @@ function editHtml() {
       <b>셀 추가</b>
       <span class="sub">담당 선생님 이름으로 새 셀을 만듭니다</span>
     </button>
-  </div>`;
+  </div>
+
+  <div style="margin-top:16px">${slotsCard()}</div>`;
 }
 
 function cellCard(c, members, editing) {
@@ -416,6 +507,54 @@ export function mount(root, rerender) {
     state.versionId = e.target.value; rerender();
   });
   root.querySelector("#delVer")?.addEventListener("click", () => deleteVersion(rerender));
+  root.querySelector("#renameVer")?.addEventListener("click", () => renameVersion(rerender));
+  root.querySelector("#restoreVer")?.addEventListener("click", () => restoreVersion(rerender));
+
+  // ── 임시저장 ──
+  root.querySelector("#slotSave")?.addEventListener("click", () => {
+    const it = saveSlot();
+    if (!it) return;
+    rerender();
+    toast(`«${it.name}» 으로 임시저장했습니다.`);
+  });
+  root.querySelectorAll("[data-slot-load]").forEach((b) => b.addEventListener("click", async () => {
+    const id = b.dataset.slotLoad;
+    const it = readSlots().find((x) => x.id === id);
+    if (draft && !(await confirmDialog(
+      `지금 짜던 것을 두고 «${it?.name || ""}» 을 불러올까요? 저장하지 않은 지금 내용은 사라집니다.`,
+      { okText: "불러오기", danger: false }))) return;
+    if (loadSlot(id)) { rerender(); toast(`«${it.name}» 을 불러왔습니다.`); }
+  }));
+  root.querySelectorAll("[data-slot-rename]").forEach((b) => b.addEventListener("click", () => {
+    const it = readSlots().find((x) => x.id === b.dataset.slotRename);
+    if (!it) return;
+    const form = document.createElement("form");
+    form.id = "slotForm";
+    form.innerHTML = `
+      <div class="field"><label>임시저장 이름</label>
+        <input type="text" name="name" required maxlength="40" value="${esc(it.name)}"
+               placeholder="예: 형제 나눠본 안">
+        <span class="hint">내 브라우저에만 있는 이름입니다.</span></div>`;
+    modal({
+      title: "이름 바꾸기", narrow: true, body: form,
+      footer: `<button class="btn" data-close>취소</button>
+               <button class="btn btn-primary" form="slotForm" type="submit">저장</button>`,
+      onMount(box, close) {
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const nm = new FormData(form).get("name").trim();
+          if (!nm) return;
+          renameSlot(it.id, nm);
+          close(); rerender(); toast("이름을 바꿨습니다.");
+        });
+      },
+    });
+  }));
+  root.querySelectorAll("[data-slot-del]").forEach((b) => b.addEventListener("click", async () => {
+    const it = readSlots().find((x) => x.id === b.dataset.slotDel);
+    if (!(await confirmDialog(`«${it?.name || ""}» 을 지울까요?`, { okText: "삭제" }))) return;
+    deleteSlot(b.dataset.slotDel); rerender(); toast("지웠습니다.");
+  }));
   root.querySelector("#xlsxVer")?.addEventListener("click", async () => {
     const { exportCurrentVersion } = await import("../xlsx.js");
     await exportCurrentVersion();
@@ -617,6 +756,113 @@ function saveDraft(after) {
           console.error(err);
           toast(err.message, "err");
           btn.disabled = false; btn.textContent = "저장";
+        }
+      });
+    },
+  });
+}
+
+// ── 지금 버전의 이름·메모 고치기 ─────────────────────────
+function renameVersion(after) {
+  const v = currentVersion();
+  if (!v) return;
+  const who = state.profile?.name || state.profile?.username || "";
+  const form = document.createElement("form");
+  form.id = "renForm";
+  form.innerHTML = `
+    <div class="field"><label>편성 이름</label>
+      <input type="text" name="label" required value="${esc(v.label)}" placeholder="예: 2026-2학기">
+      <span class="hint">드롭다운과 엑셀에 이 이름으로 나옵니다.</span></div>
+    <div class="field" style="margin-top:12px"><label>메모</label>
+      <input type="text" name="note" value="${esc(v.note || "")}" placeholder="예: 여름 수련회 이후 재편성"></div>
+    <div class="form-note" style="margin-top:14px">
+      편성 내용(누가 어느 셀인지)은 그대로입니다. 이름과 메모만 바뀝니다.
+    </div>`;
+  modal({
+    title: "편성 이름 바꾸기", narrow: true, body: form,
+    footer: `<button class="btn" data-close>취소</button>
+             <button class="btn btn-primary" form="renForm" type="submit">저장</button>`,
+    onMount(box, close) {
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn = box.querySelector('[type="submit"]');
+        btn.disabled = true; btn.textContent = "저장 중…";
+        const fd = Object.fromEntries(new FormData(form).entries());
+        try {
+          await api.saveVersion({
+            id: v.id, label: fd.label.trim(), note: fd.note?.trim() || null,
+            created_at: v.created_at, created_by_name: v.created_by_name,
+            updated_at: new Date().toISOString(), updated_by_name: who,
+          });
+          await api.refresh();
+          close(); after?.();
+          toast("이름을 바꿨습니다.");
+        } catch (err) {
+          toast(err.message, "err");
+          btn.disabled = false; btn.textContent = "저장";
+        }
+      });
+    },
+  });
+}
+
+// ── 지난 편성을 통째로 다시 최신으로 ──────────────────────
+//   지운 게 아니라 «그대로 복사해서 새 버전» 을 만듭니다.
+//   그래서 되돌린 뒤에도 그 사이 버전들이 기록으로 남습니다.
+function restoreVersion(after) {
+  const v = currentVersion();
+  if (!v) return;
+  const who = state.profile?.name || state.profile?.username || "";
+  const n = state.members.filter((m) => m.version_id === v.id).length;
+  const form = document.createElement("form");
+  form.id = "resForm";
+  form.innerHTML = `
+    <div class="form-note" style="margin-top:0">
+      <b>«${esc(v.label)}»</b> (${esc(fmtDate(v.created_at))} 등록) 의 편성을
+      그대로 가져와 <b>새 최신 편성</b>으로 만듭니다.
+      셀 ${versionCells(v.id).length}개 · 배정 ${n}명.
+    </div>
+    <div class="field" style="margin-top:14px"><label>새 편성 이름</label>
+      <input type="text" name="label" required value="${esc(v.label)} (되돌림)"></div>
+    <div class="form-note" style="margin-top:14px">
+      지금 최신 편성 «${esc(state.versions[0]?.label || "")}» 은 <b>지워지지 않고</b>
+      지난 버전으로 남습니다. 마음이 바뀌면 다시 그쪽으로 되돌릴 수 있습니다.
+    </div>`;
+  modal({
+    title: "이 편성으로 되돌리기", narrow: true, body: form,
+    footer: `<button class="btn" data-close>취소</button>
+             <button class="btn btn-primary" form="resForm" type="submit">되돌리기</button>`,
+    onMount(box, close) {
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn = box.querySelector('[type="submit"]');
+        btn.disabled = true; btn.textContent = "만드는 중…";
+        const fd = Object.fromEntries(new FormData(form).entries());
+        try {
+          const src = versionCells(v.id);
+          const nv = await api.saveVersion({
+            label: fd.label.trim(),
+            note: `${fmtDate(v.created_at)} «${v.label}» 편성을 그대로 되돌림`,
+            created_by_name: who, updated_by_name: who,
+          });
+          const made = await api.saveCells(src.map((c, i) => ({
+            version_id: nv.id, name: c.name, leaders: c.leaders,
+            kind: c.kind, sort_order: c.sort_order || i + 1,
+          })));
+          const map = {};
+          src.forEach((c, i) => { map[c.id] = made[i].id; });
+          const rows = state.members
+            .filter((m) => m.version_id === v.id && map[m.cell_id])
+            .map((m) => ({ version_id: nv.id, cell_id: map[m.cell_id], student_id: m.student_id }));
+          await api.saveMembers(rows);
+          await api.refresh();
+          state.versionId = nv.id;
+          close(); after?.();
+          toast("이 편성으로 되돌렸습니다.");
+        } catch (err) {
+          console.error(err);
+          toast(err.message, "err");
+          btn.disabled = false; btn.textContent = "되돌리기";
         }
       });
     },

@@ -1,6 +1,6 @@
 // ── 올해 중1 (하늘아이에서 올라온 아이들 포함) ───────────────
 import { state, cellNameOf, isLoggedIn, isMasked, photoOf, gradeOf, isActive, schoolYear } from "../data.js";
-import { esc, dash, telLink, downloadCSV, toast, avatar } from "../ui.js";
+import { esc, dash, telLink, avatar } from "../ui.js";
 import { showStudent, editStudent } from "./students.js";
 
 export function html() {
@@ -19,7 +19,7 @@ export function html() {
          ${isMasked() ? "· 연락처·보호자 정보는 <b>로그인해야</b> 보입니다." : ""}</p>
     </div>
     <div class="page-actions">
-      <button class="btn btn-sm" id="csvBtn">CSV 내려받기</button>
+      <button class="btn btn-sm" id="csvBtn">📥 엑셀 받기</button>
       ${isLoggedIn() ? `<button class="btn btn-primary btn-sm" id="addBtn">＋ 새 친구 등록</button>` : ""}
     </div>
   </div>
@@ -76,16 +76,14 @@ export function mount(root, rerender) {
   }));
   root.querySelector("#addBtn")?.addEventListener("click", () =>
     editStudent({ is_promoted: true, status: "재적" }, rerender));
-  root.querySelector("#csvBtn").addEventListener("click", () => {
-    const rows = state.students.filter((s) => gradeOf(s) === "중1" && isActive(s));
-    if (isMasked())
-      downloadCSV("꿈땅새땅_올해중1.csv", ["이름", "성별", "생년월일", "셀"],
-        rows.map((s) => [s.name, s.gender, s.birth, cellNameOf(s.id) || ""]));
-    else
-      downloadCSV("꿈땅새땅_올해중1.csv",
-        ["이름","성별","생년월일","전화번호","어머니성함","어머니연락처","아버지성함","아버지연락처","형제관계","집주소","특이사항"],
-        rows.map((s) => [s.name, s.gender, s.birth, s.phone, s.mother_name, s.mother_phone,
-          s.father_name, s.father_phone, s.siblings, s.address, s.note]));
-    toast("CSV 파일을 내려받았습니다.");
+  root.querySelector("#csvBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = "만드는 중…";
+    try {
+      const { exportStudentList } = await import("../xlsx.js");
+      const rows = state.students.filter((s) => gradeOf(s) === "중1" && isActive(s));
+      await exportStudentList(rows, { masked: isMasked(), what: "올해 중1" });
+    } finally { btn.disabled = false; btn.textContent = "📥 엑셀 받기"; }
   });
+
 }
