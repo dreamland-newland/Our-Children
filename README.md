@@ -1,7 +1,6 @@
 # 꿈땅새땅 청소년부 교적부
 
 | | |
-|---|---|
 | **사이트 주소** | <https://dreamland-newland.github.io> |
 | **화면(코드)이 사는 곳** | GitHub 저장소 — 무료 |
 | **아이들 자료(DB)가 사는 곳** | Supabase — 무료 |
