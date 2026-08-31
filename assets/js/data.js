@@ -219,6 +219,25 @@ const supabaseAdapter = {
     if (error) throw new Error(translate(error.message));
   },
 
+  // ── 가입 알림 메일 (06_notify_email.sql 을 실행한 교적부에서만) ──
+  async notifyStatus() {
+    const { data, error } = await sb.rpc("notify_status");
+    if (error) {
+      if (/does not exist|schema cache/i.test(error.message)) return null;   // 아직 설정 전
+      throw new Error(translate(error.message));
+    }
+    return data?.[0] || null;
+  },
+  async setNotifyEmails(emails, enabled) {
+    const { error } = await sb.rpc("set_notify_emails", { p_emails: emails, p_enabled: !!enabled });
+    if (error) throw new Error(translate(error.message));
+  },
+  async notifyTest() {
+    const { data, error } = await sb.rpc("notify_test");
+    if (error) throw new Error(translate(error.message));
+    return data === true;
+  },
+
   async findTeacherCandidates(name, phone) {
     const { data, error } = await sb.rpc("find_teacher_candidates", { p_name: name, p_phone: phone });
     if (error) throw new Error(error.message);
@@ -501,6 +520,11 @@ const demoAdapter = {
     this.persist();
   },
 
+  // 데모 모드에는 메일 보낼 서버가 없습니다 (설정 전으로 보여 줍니다)
+  async notifyStatus() { return null; },
+  async setNotifyEmails() { throw new Error("데모 모드에서는 알림을 설정할 수 없습니다."); },
+  async notifyTest() { throw new Error("데모 모드에서는 메일을 보낼 수 없습니다."); },
+
   /** 가입 «신청». 맨 처음 한 사람만 바로 열리고, 나머지는 관리자 승인을 기다립니다. */
   async signUp({ username, password, name, phone, teacherId }) {
     demo.settings ||= { open: true };
@@ -639,6 +663,9 @@ export const api = {
   revokeAccount: (id) => adapter.revokeAccount(id),
   signupRequirements: () => adapter.signupRequirements(),
   setSignupOpen: (b) => adapter.setSignupOpen(b),
+  notifyStatus: () => adapter.notifyStatus(),
+  setNotifyEmails: (list, on) => adapter.setNotifyEmails(list, on),
+  notifyTest: () => adapter.notifyTest(),
   approveAccount: (id, tid) => adapter.approveAccount(id, tid),
   setAccountTeacher: (id, tid) => adapter.setAccountTeacher(id, tid),
   unlinkedTeachers: () => adapter.unlinkedTeachers(),

@@ -11,7 +11,14 @@ import { GRADES } from "../config.js";
 import { moveStudent } from "./cells.js";
 import { bindDownload as bindXlsx } from "../xlsx.js";
 
-const f = { q: "", grade: "", gender: "", cell: "", status: "재학", sort: "seq", dir: 1 };
+const f = {
+  q: "", grade: "", gender: "", cell: "", status: "재학",
+  school: "", birthYear: "", phone: "", guardian: "", note: "",   // 표 머리에서 거는 필터
+  sort: "seq", dir: 1,
+};
+/** 위쪽 칸과 표 머리 필터가 같이 쓰는 «걸어 둔 것» 목록 */
+const ACTIVE = ["q", "grade", "gender", "cell", "school", "birthYear", "phone", "guardian", "note"];
+const anyFilter = () => ACTIVE.some((k) => f[k]) || f.status !== "재학";
 
 export function html() {
   return `
@@ -73,17 +80,29 @@ function opts(all, list, cur) {
     list.map((v) => `<option value="${esc(v)}"${cur === v ? " selected" : ""}>${esc(v)}</option>`).join("");
 }
 
-function filtered() {
-  const q = f.q.trim().toLowerCase();
+const hasGuardian = (s) => !!(s.mother_name || s.father_name || s.mother_phone || s.father_phone);
+const yearOf = (s) => (s.birth ? String(s.birth).slice(0, 4) : (s.birth_year ? String(s.birth_year) : ""));
+
+/** except 로 넘긴 칸의 필터는 빼고 거릅니다 (그 칸 목록의 «몇 명» 을 셀 때 씁니다) */
+function filtered(except) {
+  const on = (k) => k !== except && f[k];
+  const q = on("q") ? f.q.trim().toLowerCase() : "";
   let rows = state.students.filter((s) => {
     const st = statusOf(s);
-    if (f.grade && gradeOf(s) !== f.grade) return false;
-    if (f.gender && s.gender !== f.gender) return false;
+    if (on("grade") && gradeOf(s) !== f.grade) return false;
+    if (on("gender") && s.gender !== f.gender) return false;
+    if (on("school") && (f.school === "__none" ? !!s.school : s.school !== f.school)) return false;
+    if (on("birthYear") && yearOf(s) !== f.birthYear) return false;
+    if (on("phone") && (f.phone === "있음") !== !!s.phone) return false;
+    if (on("guardian") && (f.guardian === "있음") !== hasGuardian(s)) return false;
+    if (on("note") && (f.note === "있음") !== !!s.note) return false;
     if (f.status === "재학") { if (st !== "재적" && st !== "장기결석") return false; }
     else if (f.status && st !== f.status) return false;
     const cid = cellIdOf(s.id);
-    if (f.cell === "__none") { if (cid) return false; }
-    else if (f.cell && cid !== f.cell) return false;
+    if (on("cell")) {
+      if (f.cell === "__none") { if (cid) return false; }
+      else if (cid !== f.cell) return false;
+    }
     if (!q) return true;
     return [s.name, s.school, s.phone, s.mother_name, s.mother_phone,
             s.father_name, s.father_phone, s.address, s.note, s.siblings]
@@ -103,26 +122,31 @@ function filtered() {
 
 function draw(root) {
   const rows = filtered();
-  root.querySelector("#count").textContent = `${rows.length}명`;
+  const total = state.students.filter((s) => ["재적", "장기결석"].includes(statusOf(s))).length;
+  root.querySelector("#count").innerHTML = anyFilter()
+    ? `<b>${rows.length}명</b> <span style="color:var(--text-muted)">/ ${total}명</span>`
+    : `${rows.length}명`;
+  syncTopFilters(root);
   const wrap = root.querySelector("#tableWrap");
   const admin = isLoggedIn();
 
   if (!rows.length) {
-    wrap.innerHTML = `<div class="empty">조건에 맞는 학생이 없습니다.</div>`;
+    wrap.innerHTML = `
+      <table class="data"><thead><tr>${headRow(admin)}</tr></thead></table>
+      <div class="empty">조건에 맞는 아이가 없습니다.
+        ${anyFilter() ? `<div style="margin-top:10px">
+          <button class="btn btn-sm" id="clearAll">필터 모두 지우기</button></div>` : ""}</div>`;
+    bindHead(wrap, root);
     return;
   }
 
   wrap.innerHTML = `
   <table class="data">
-    <thead><tr>
-      ${th("seq", "#")}${th("name", "이름")}${th("gender", "성별")}${th("grade", "학년")}
-      ${th("school", "학교")}${th("birth", "생년월일")}${th("cell_id", "셀")}
-      ${isMasked() ? "" : "<th>전화번호</th><th>보호자</th><th>특이사항</th>"}${admin ? "<th></th>" : ""}
-    </tr></thead>
+    <thead><tr>${headRow(admin)}</tr></thead>
     <tbody>
-      ${rows.map((s) => `
+      ${rows.map((s, i) => `
       <tr class="clickable" data-id="${s.id}">
-        <td class="num">${s.seq ?? ""}</td>
+        <td class="num" title="교적 번호 ${s.seq ?? "-"}">${i + 1}</td>
         <td><span style="display:inline-flex;align-items:center;gap:8px">
             ${avatar(s.name, photoOf(s.id), 26)}
             <b>${esc(s.name)}</b></span>${s.is_promoted
@@ -144,11 +168,7 @@ function draw(root) {
     </tbody>
   </table>`;
 
-  wrap.querySelectorAll("th.sortable").forEach((el) => el.addEventListener("click", () => {
-    const k = el.dataset.key;
-    if (f.sort === k) f.dir *= -1; else { f.sort = k; f.dir = 1; }
-    draw(root);
-  }));
+  bindHead(wrap, root);
   wrap.querySelectorAll("tr[data-id]").forEach((tr) => tr.addEventListener("click", (e) => {
     if (e.target.closest("a,[data-edit]")) return;
     showStudent(state.students.find((s) => s.id === tr.dataset.id), () => draw(root));
@@ -157,10 +177,168 @@ function draw(root) {
     editStudent(state.students.find((s) => s.id === b.dataset.edit), () => draw(root))));
 }
 
-const th = (key, label) => {
-  const on = f.sort === key;
-  return `<th class="sortable" data-key="${key}">${esc(label)}${on ? (f.dir > 0 ? " ↑" : " ↓") : ""}</th>`;
-};
+// ── 표 머리 (정렬 + 칸마다 필터) ──────────────────────────
+//   위쪽 드롭다운과 «같은 값» 을 쓰므로 어느 쪽에서 걸든 함께 움직입니다.
+const COLS = [
+  { key: "seq",     label: "#" },
+  { key: "name",    label: "이름",     filter: "q" },
+  { key: "gender",  label: "성별",     filter: "gender" },
+  { key: "grade",   label: "학년",     filter: "grade" },
+  { key: "school",  label: "학교",     filter: "school" },
+  { key: "birth",   label: "생년월일", filter: "birthYear" },
+  { key: "cell_id", label: "셀",       filter: "cell" },
+  { key: "phone",   label: "전화번호", filter: "phone",    masked: true },
+  { key: "guardian", label: "보호자",  filter: "guardian", masked: true },
+  { key: "note",    label: "특이사항", filter: "note",     masked: true },
+];
+
+/** 그 칸에서 고를 수 있는 것들 — [값, 보이는 글자] (개수는 따로 셉니다) */
+function choicesFor(key) {
+  const pool = filtered(key);
+  const count = (fn) => pool.filter(fn).length;
+  const uniq = (get) => [...new Set(pool.map(get).filter(Boolean))];
+  switch (key) {
+    case "gender":
+      return [["남", "남", count((s) => s.gender === "남")], ["여", "여", count((s) => s.gender === "여")]];
+    case "grade":
+      return GRADES.map((g) => [g, g, count((s) => gradeOf(s) === g)]).filter((r) => r[2]);
+    case "school": {
+      const list = uniq((s) => s.school).sort((a, b) => byName(a, b))
+        .map((v) => [v, v, count((s) => s.school === v)]);
+      const none = count((s) => !s.school);
+      return none ? [...list, ["__none", "학교 미등록", none]] : list;
+    }
+    case "birthYear":
+      return uniq(yearOf).sort().reverse().map((y) => [y, `${y}년생`, count((s) => yearOf(s) === y)]);
+    case "cell": {
+      const list = versionCells().map((c) => [c.id, c.name, count((s) => cellIdOf(s.id) === c.id)])
+        .filter((r) => r[2]);
+      const none = count((s) => !cellIdOf(s.id));
+      return none ? [...list, ["__none", "미배정", none]] : list;
+    }
+    case "phone":
+      return [["있음", "번호 있음", count((s) => !!s.phone)], ["없음", "번호 없음", count((s) => !s.phone)]]
+        .filter((r) => r[2]);
+    case "guardian":
+      return [["있음", "보호자 있음", count(hasGuardian)], ["없음", "보호자 없음", count((s) => !hasGuardian(s))]]
+        .filter((r) => r[2]);
+    case "note":
+      return [["있음", "특이사항 있음", count((s) => !!s.note)], ["없음", "없음", count((s) => !s.note)]]
+        .filter((r) => r[2]);
+    default: return [];
+  }
+}
+
+/** 지금 걸려 있는 값을 사람 말로 */
+function activeLabel(key) {
+  const v = f[key];
+  if (!v) return "";
+  if (key === "q") return `"${f.q}"`;
+  const hit = choicesFor(key).find((c) => c[0] === v);
+  return hit ? hit[1] : v;
+}
+
+function headRow(admin) {
+  return COLS.filter((c) => !(c.masked && isMasked()))
+    .map((c) => {
+      const sorted = f.sort === c.key;
+      const on = c.filter && f[c.filter];
+      return `
+      <th class="hcol${on ? " filtered" : ""}">
+        <button class="hsort${sorted ? " on" : ""}" data-sort="${c.key}"
+          title="이 칸으로 정렬">${esc(c.label)}${sorted ? (f.dir > 0 ? " ↑" : " ↓") : ""}</button>
+        ${c.filter ? `<button class="hfil${on ? " on" : ""}" data-filter="${c.filter}"
+          title="${on ? esc(activeLabel(c.filter)) + " — 눌러서 바꾸기" : "이 칸으로 거르기"}">▾</button>` : ""}
+        ${on ? `<span class="hchip" title="${esc(activeLabel(c.filter))}">${esc(activeLabel(c.filter))}
+          <b data-clear="${c.filter}" title="이 필터만 지우기">✕</b></span>` : ""}
+      </th>`;
+    }).join("") + (admin ? "<th></th>" : "");
+}
+
+/** 표 머리의 정렬·필터 버튼 연결 */
+function bindHead(wrap, root) {
+  wrap.querySelectorAll("[data-sort]").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.sort;
+    if (f.sort === k) f.dir *= -1; else { f.sort = k; f.dir = 1; }
+    draw(root);
+  }));
+  wrap.querySelectorAll("[data-clear]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    f[b.dataset.clear] = ""; draw(root);
+  }));
+  wrap.querySelectorAll("[data-filter]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openHeadFilter(b, b.dataset.filter, root);
+  }));
+  wrap.querySelector("#clearAll")?.addEventListener("click", () => {
+    for (const k of ACTIVE) f[k] = "";
+    f.status = "재학";
+    draw(root);
+  });
+}
+
+/** 칸 머리 ▾ 를 누르면 뜨는 작은 목록 */
+function openHeadFilter(btn, key, root) {
+  document.querySelector(".hpop")?.remove();
+  const pop = document.createElement("div");
+  pop.className = "hpop";
+  const cur = f[key];
+
+  if (key === "q") {
+    pop.innerHTML = `
+      <div class="hpop-head">이름·학교·연락처로 찾기</div>
+      <div class="searchbar" style="margin:0 8px 8px"><span class="s-ico">🔍</span>
+        <input type="search" id="hq" value="${esc(f.q)}" placeholder="예: 홍길동"></div>
+      <button class="hpop-item${cur ? "" : " on"}" data-v="">전체 보기</button>`;
+  } else {
+    const list = choicesFor(key);
+    pop.innerHTML = `
+      <div class="hpop-head">${esc(COLS.find((c) => c.filter === key)?.label || "")} 고르기</div>
+      <div class="hpop-list">
+        <button class="hpop-item${cur ? "" : " on"}" data-v="">전체 <span>${filtered(key).length}</span></button>
+        ${list.map(([v, t, n]) => `
+          <button class="hpop-item${cur === v ? " on" : ""}" data-v="${esc(v)}">
+            ${esc(t)} <span>${n}</span></button>`).join("")}
+      </div>`;
+  }
+
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect();
+  pop.style.top = `${window.scrollY + r.bottom + 6}px`;
+  pop.style.left = `${Math.max(8, Math.min(window.scrollX + r.left - 8,
+    window.scrollX + window.innerWidth - pop.offsetWidth - 8))}px`;
+
+  const close = () => { pop.remove(); document.removeEventListener("click", onOut, true);
+                        document.removeEventListener("keydown", onKey); };
+  const onOut = (e) => { if (!pop.contains(e.target)) close(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  setTimeout(() => {
+    document.addEventListener("click", onOut, true);
+    document.addEventListener("keydown", onKey);
+  }, 0);
+
+  pop.querySelectorAll("[data-v]").forEach((b) => b.addEventListener("click", () => {
+    f[key] = b.dataset.v;
+    if (key === "q" && !b.dataset.v) f.q = "";
+    close(); draw(root);
+  }));
+  const qi = pop.querySelector("#hq");
+  if (qi) {
+    qi.focus();
+    qi.addEventListener("input", () => { f.q = qi.value; draw(root); });
+    qi.addEventListener("keydown", (e) => { if (e.key === "Enter") close(); });
+  }
+}
+
+/** 표 머리에서 건 것을 위쪽 칸에도 그대로 보이게 */
+function syncTopFilters(root) {
+  const q = root.querySelector("#q");
+  if (q && q.value !== f.q) q.value = f.q;
+  for (const k of ["grade", "gender", "cell", "status"]) {
+    const el = root.querySelector("#" + k);
+    if (el && el.value !== f[k]) el.value = f[k];
+  }
+}
 
 function guardian(s) {
   const parts = [];

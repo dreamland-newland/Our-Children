@@ -20,7 +20,8 @@ export function html() {
       ${isAdmin() ? `<button class="btn btn-sm${state.pendingCount ? " btn-primary" : ""}" id="accounts">
                        👥 가입 승인 · 계정${state.pendingCount
                          ? ` <span class="badge orange" style="margin-left:2px">${state.pendingCount}</span>` : ""}</button>
-                     <button class="btn btn-sm" id="signupCfg">🔐 가입 신청 설정</button>` : ""}
+                     <button class="btn btn-sm" id="signupCfg">🔐 가입 신청 설정</button>
+                     <button class="btn btn-sm" id="notifyCfg">🔔 알림 설정</button>` : ""}
       ${isLoggedIn() ? `<button class="btn btn-primary btn-sm" id="addBtn">＋ 교사·간사 등록</button>` : ""}
     </div>
   </div>
@@ -70,6 +71,7 @@ export function mount(root, rerender) {
   root.querySelector("#accounts")?.addEventListener("click", () => accountPanel(rerender));
   root.querySelector("#accounts2")?.addEventListener("click", () => accountPanel(rerender));
   root.querySelector("#signupCfg")?.addEventListener("click", () => signupSettings(rerender));
+  root.querySelector("#notifyCfg")?.addEventListener("click", () => notifySettings());
   root.querySelector("#addBtn")?.addEventListener("click", () => editTeacher(null, rerender));
   root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () =>
     editTeacher(state.teachers.find((t) => t.id === b.dataset.edit), rerender)));
@@ -78,6 +80,92 @@ export function mount(root, rerender) {
     await exportTeachers({ masked: !isLoggedIn() });
   });
 
+}
+
+// ── 관리자: 가입 신청 알림 메일 ────────────────────────────
+async function notifySettings() {
+  let st = null;
+  try { st = await api.notifyStatus(); }
+  catch (e) { return toast(e.message, "err"); }
+
+  // 아직 06_notify_email.sql 을 실행하지 않은 교적부
+  if (!st) {
+    return modal({
+      title: "가입 신청 알림 메일", narrow: true,
+      body: `
+        <div class="form-note" style="margin:0">
+          아직 <b>알림 기능이 설치되지 않았습니다.</b>
+          <div style="margin-top:8px">
+            저장소의 <b>supabase/06_notify_email.sql</b> 파일 맨 위 안내를 따라
+            한 번만 설정하면, 가입 신청이 들어올 때 <b>메일로 바로 알려 드립니다.</b>
+            (무료 · 10분 정도 걸립니다)
+          </div>
+        </div>`,
+      footer: `<button class="btn" data-close>닫기</button>`,
+    });
+  }
+
+  const box = document.createElement("div");
+  const draw = () => {
+    box.innerHTML = `
+      ${st.ready ? "" : `<div class="form-note warn-note" style="margin:0 0 12px">
+        <b>메일 보내는 곳이 아직 연결되지 않았습니다.</b>
+        <b>supabase/06_notify_email.sql</b> 맨 아래 «설정 넣기» 를 마쳐 주세요.</div>`}
+      <div class="form-note" style="margin:0 0 14px">
+        가입 신청이 들어오면 아래 주소로 <b>바로 메일</b>이 갑니다.
+        신청자의 이름·휴대폰번호·아이디가 담겨 있어, 아는 분인지 바로 확인하실 수 있습니다.
+        ${st.from_email ? `<div style="margin-top:6px;color:var(--text-muted)">
+          보내는 사람: ${esc(st.from_email)}</div>` : ""}
+      </div>
+      <div class="field">
+        <label>알림 받을 메일 주소</label>
+        <textarea id="nEmails" rows="3"
+          placeholder="you@example.com&#10;다른분@example.com">${esc((st.to_emails || []).join("\n"))}</textarea>
+        <span class="hint">한 줄에 하나씩. 여러 명이 함께 받을 수 있습니다.</span>
+      </div>
+      <label class="chk" style="margin-top:10px">
+        <input type="checkbox" id="nOn"${st.enabled ? " checked" : ""}>
+        <span>알림 메일 보내기</span></label>`;
+  };
+  draw();
+
+  modal({
+    title: "가입 신청 알림 메일", narrow: true, body: box,
+    footer: `<button class="btn" data-test>시험 메일 보내기</button>
+             <div style="flex:1"></div>
+             <button class="btn" data-close>닫기</button>
+             <button class="btn btn-primary" data-save>저장</button>`,
+    onMount(b, close) {
+      const emails = () => box.querySelector("#nEmails").value
+        .split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
+
+      b.querySelector("[data-save]").addEventListener("click", async () => {
+        const list = emails();
+        const bad = list.filter((e) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+        if (bad.length) return toast(`메일 주소가 이상합니다: ${bad[0]}`, "err");
+        try {
+          await api.setNotifyEmails(list, box.querySelector("#nOn").checked);
+          close();
+          toast(list.length ? `${list.length}곳으로 알림이 갑니다.` : "알림 받을 주소를 비웠습니다.");
+        } catch (e) { toast(e.message, "err"); }
+      });
+
+      b.querySelector("[data-test]").addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        const list = emails();
+        if (!list.length) return toast("먼저 받을 주소를 적어 주세요.", "err");
+        btn.disabled = true; btn.textContent = "보내는 중…";
+        try {
+          await api.setNotifyEmails(list, box.querySelector("#nOn").checked);
+          const ok = await api.notifyTest();
+          toast(ok ? "시험 메일을 보냈습니다. 1분 안에 도착합니다."
+                   : "아직 메일 설정이 끝나지 않았습니다 (06_notify_email.sql 확인).",
+                ok ? "" : "err");
+        } catch (err) { toast(err.message, "err"); }
+        finally { btn.disabled = false; btn.textContent = "시험 메일 보내기"; }
+      });
+    },
+  });
 }
 
 // ── 관리자: 가입 승인 · 계정 · 관리자 권한 ──────────────────

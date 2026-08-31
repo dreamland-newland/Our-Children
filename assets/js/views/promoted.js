@@ -4,6 +4,9 @@ import { esc, dash, telLink, avatar } from "../ui.js";
 import { showStudent, editStudent } from "./students.js";
 import { bindDownload as bindXlsx } from "../xlsx.js";
 
+const SKY_KEY = "kkumttang.promoted.showSky";
+let showSky = (() => { try { return localStorage.getItem(SKY_KEY) !== "off"; } catch { return true; } })();
+
 export function html() {
   const rows = state.students
     .filter((s) => gradeOf(s) === "중1" && isActive(s))
@@ -20,6 +23,9 @@ export function html() {
          ${isMasked() ? "· 연락처·보호자 정보는 <b>로그인해야</b> 보입니다." : ""}</p>
     </div>
     <div class="page-actions">
+      <label class="chk" title="이름 옆 «하늘아이» 배지를 켜고 끕니다">
+        <input type="checkbox" id="skyToggle"${showSky ? " checked" : ""}>
+        <span>하늘아이 표시</span></label>
       <button class="btn btn-sm" id="xlsxBtn">📥 엑셀 받기</button>
       ${isLoggedIn() ? `<button class="btn btn-primary btn-sm" id="addBtn">＋ 새 친구 등록</button>` : ""}
     </div>
@@ -39,7 +45,7 @@ export function html() {
           <td class="num">${i + 1}</td>
           <td><span style="display:inline-flex;align-items:center;gap:8px">
               ${avatar(s.name, photoOf(s.id), 26)}<b>${esc(s.name)}</b></span>
-              ${s.is_promoted ? ' <span class="badge blue">하늘아이</span>' : ""}</td>
+              ${showSky && s.is_promoted ? ' <span class="badge blue">하늘아이</span>' : ""}</td>
           <td>${dash(s.gender)}</td>
           <td class="num">${s.birth ? esc(s.birth) : (s.birth_year ? esc(s.birth_year) + "년" : "—")}</td>
           <td>${cellNameOf(s.id) ? esc(cellNameOf(s.id)) : '<span class="badge">미배정</span>'}</td>
@@ -71,6 +77,11 @@ export function html() {
 }
 
 export function mount(root, rerender) {
+  root.querySelector("#skyToggle")?.addEventListener("change", (e) => {
+    showSky = e.target.checked;
+    try { localStorage.setItem(SKY_KEY, showSky ? "on" : "off"); } catch {}
+    rerender();
+  });
   root.querySelectorAll("tr[data-id]").forEach((tr) => tr.addEventListener("click", (e) => {
     if (e.target.closest("a")) return;
     showStudent(state.students.find((s) => s.id === tr.dataset.id), rerender);

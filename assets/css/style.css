@@ -713,3 +713,55 @@ table.data.peek td.hit {
   border-color: color-mix(in srgb, var(--warning) 45%, transparent);
   background: color-mix(in srgb, var(--warning) 12%, var(--surface));
 }
+
+/* ── 주소록 표 머리 — 정렬 + 칸별 필터 ────────────────────── */
+.data th.hcol { white-space: nowrap; }
+.data th.hcol.filtered { background: color-mix(in srgb, var(--series-1) 10%, var(--surface-2)); }
+.hsort {
+  border: 0; background: none; padding: 0; font: inherit; font-weight: 600;
+  color: inherit; cursor: pointer;
+}
+.hsort.on { color: var(--series-1); }
+.hfil {
+  border: 0; background: none; padding: 0 2px; margin-left: 2px; cursor: pointer;
+  color: var(--text-muted); font-size: 11px; line-height: 1; border-radius: 4px;
+}
+.hfil:hover { background: var(--surface); color: var(--text-primary); }
+.hfil.on { color: var(--series-1); font-weight: 700; }
+.hchip {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 5px;
+  padding: 1px 5px 1px 7px; border-radius: 999px; max-width: 120px;
+  background: var(--series-1-soft); color: var(--series-1);
+  font-size: 11px; font-weight: 650; overflow: hidden; text-overflow: ellipsis;
+}
+.hchip b { cursor: pointer; font-size: 10px; opacity: .75; }
+.hchip b:hover { opacity: 1; }
+
+/* 칸 머리에서 뜨는 목록 */
+.hpop {
+  position: absolute; z-index: 80; min-width: 190px; max-width: 280px;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 8px 0 6px;
+}
+.hpop-head { padding: 2px 12px 8px; font-size: 11.5px; color: var(--text-muted); font-weight: 600; }
+.hpop-list { max-height: 280px; overflow: auto; }
+.hpop-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; border: 0; background: none; cursor: pointer; font: inherit;
+  padding: 7px 12px; font-size: 13px; color: inherit; text-align: left;
+}
+.hpop-item:hover { background: var(--surface-2); }
+.hpop-item.on { color: var(--series-1); font-weight: 650; background: var(--series-1-soft); }
+.hpop-item span { color: var(--text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.hpop-item.on span { color: inherit; }
+
+/* ── 체크박스 라벨 (페이지 상단 옵션) ─────────────────────── */
+.chk {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 7px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: 13.5px; color: var(--text-secondary); user-select: none;
+}
+.chk:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.chk input { width: 14px; height: 14px; margin: 0; accent-color: var(--series-1); }
+.chk:has(input:checked) { color: var(--text-primary); font-weight: 550; }
