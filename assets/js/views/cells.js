@@ -7,7 +7,7 @@ import {
   versionLabel, cellMembers, cellIdOf, photoOf, uid, gradeOf, gradeWithYear, statusOf, isActive, isGraduated,
   cellRoleOf, roleRank,
 } from "../data.js";
-import { esc, modal, toast, confirmDialog, avatar } from "../ui.js";
+import { esc, modal, toast, confirmDialog, avatar, showSkyBadge } from "../ui.js";
 import { DEFAULT_TERM_LABEL } from "../config.js";
 import { showStudent } from "./students.js";
 import { bindDownload as bindXlsx } from "../xlsx.js";
@@ -591,7 +591,7 @@ function studentRow(s, editing) {
       ${avatar(s.name, photoOf(s.id), 22)}
       <span>${esc(s.name)}</span>
       ${seatBadge(seatOf(s.id, false))}
-      ${s.is_promoted ? '<span class="badge blue" title="초등부 하늘아이에서 올라온 아이">하늘아이</span>' : ""}
+      ${showSkyBadge() && s.is_promoted ? '<span class="badge blue" title="초등부 하늘아이에서 올라온 아이">하늘아이</span>' : ""}
       <span class="g"${gradeOf(s) ? ` title="${esc(gradeWithYear(s))}"` : ""}>${esc(gradeOf(s) || "")}</span>
     </li>`;
   }
@@ -601,7 +601,7 @@ function studentRow(s, editing) {
   // 한 줄에 다 들어가도록 배지 대신 잔글씨로 (마우스를 올리면 자세한 설명이 뜹니다)
   const meta = [
     s.gender, ageOf(s), shortSchool(s.school),
-    s.is_promoted ? "하늘아이" : "",
+    showSkyBadge() && s.is_promoted ? "하늘아이" : "",
     sibs.length ? `남매 ${sibs.map((x) => x.name).join("·")}` : "",
   ].filter(Boolean).join(" · ");
   return `

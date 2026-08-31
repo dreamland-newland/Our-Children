@@ -1,11 +1,10 @@
 // ── 올해 중1 (하늘아이에서 올라온 아이들 포함) ───────────────
 import { state, cellNameOf, isLoggedIn, isMasked, photoOf, gradeOf, isActive, schoolYear } from "../data.js";
-import { esc, dash, telLink, avatar } from "../ui.js";
+import { esc, dash, telLink, avatar, showSkyBadge, setShowSkyBadge } from "../ui.js";
 import { showStudent, editStudent } from "./students.js";
 import { bindDownload as bindXlsx } from "../xlsx.js";
 
-const SKY_KEY = "kkumttang.promoted.showSky";
-let showSky = (() => { try { return localStorage.getItem(SKY_KEY) !== "off"; } catch { return true; } })();
+let showSky = showSkyBadge();
 
 export function html() {
   const rows = state.students
@@ -23,7 +22,7 @@ export function html() {
          ${isMasked() ? "· 연락처·보호자 정보는 <b>로그인해야</b> 보입니다." : ""}</p>
     </div>
     <div class="page-actions">
-      <label class="chk" title="이름 옆 «하늘아이» 배지를 켜고 끕니다">
+      <label class="chk" title="이름 옆 «하늘아이» 배지를 켜고 끕니다 — 주소록·셀편성·한눈에 보기에도 같이 적용됩니다">
         <input type="checkbox" id="skyToggle"${showSky ? " checked" : ""}>
         <span>하늘아이 표시</span></label>
       <button class="btn btn-sm" id="xlsxBtn">📥 엑셀 받기</button>
@@ -73,13 +72,14 @@ export function html() {
     이 명단은 <b>생년월일에서 자동으로</b> 만들어집니다. 해가 바뀌면 새 중1이 저절로 채워지고
     지금 아이들은 중2로 넘어갑니다. <b>하늘아이</b>는 초등부 부서 이름이며, 주소록에서 학생을 편집할 때
     «하늘아이» 를 체크해 두면 배지로 구분해 보여줍니다.
+    위의 <b>«하늘아이 표시»</b> 를 끄면 이 화면뿐 아니라 <b>주소록·셀편성·한눈에 보기</b> 에서도 배지가 사라집니다.
   </div>`;
 }
 
 export function mount(root, rerender) {
   root.querySelector("#skyToggle")?.addEventListener("change", (e) => {
     showSky = e.target.checked;
-    try { localStorage.setItem(SKY_KEY, showSky ? "on" : "off"); } catch {}
+    setShowSkyBadge(showSky);
     rerender();
   });
   root.querySelectorAll("tr[data-id]").forEach((tr) => tr.addEventListener("click", (e) => {

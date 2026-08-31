@@ -3,7 +3,7 @@ import {
   state, birthdayList, activeCells, cellIdOf, cellMembers, currentVersion, versionLabel, isLoggedIn,
   gradeOf, statusOf, photoOf, schoolYear, cellNameOf,
 } from "../data.js";
-import { esc, barChart, avatar } from "../ui.js";
+import { esc, barChart, avatar, showSkyBadge } from "../ui.js";
 import { showStudent } from "./students.js";
 import { GRADES } from "../config.js";
 import { bindDownload as bindXlsx } from "../xlsx.js";
@@ -74,12 +74,11 @@ export function overviewView() {
       ${newbies.length ? `<div class="face-grid">${newbies.map((s) => `
         <button class="face" data-student="${s.id}" title="${esc(s.name)} — 눌러서 신상 보기">
           ${avatar(s.name, photoOf(s.id), 56)}
-          <span class="fname">${esc(s.name)}${s.is_promoted ? '<i class="dot" title="하늘아이 출신"></i>' : ""}</span>
+          <span class="fname">${esc(s.name)}${showSkyBadge() && s.is_promoted ? '<i class="dot" title="하늘아이 출신"></i>' : ""}</span>
           <span class="fsub">${esc(shortCell(cellNameOf(s.id)))}</span>
         </button>`).join("")}</div>
         <p style="margin:14px 0 0;font-size:12.5px;color:var(--text-muted)">
-          이름을 누르면 신상이 열립니다. · <i class="dot" style="display:inline-block;vertical-align:middle"></i>
-          표시는 <b>하늘아이</b>(초등부) 출신
+          이름을 누르면 신상이 열립니다.${showSkyBadge() ? ' · <i class="dot" style="display:inline-block;vertical-align:middle"></i> 표시는 <b>하늘아이</b>(초등부) 출신' : ""}
           ${isLoggedIn() ? "· 사진은 주소록에서 아이를 열어 올릴 수 있습니다." : "· 사진은 로그인하면 보입니다."}
         </p>`
         : `<div class="empty" style="padding:28px 0">올해 중1로 올라온 아이가 아직 없습니다.</div>`}

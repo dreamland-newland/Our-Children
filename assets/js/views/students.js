@@ -5,7 +5,7 @@ import {
 } from "../data.js";
 import {
   esc, dash, telLink, fmtBirth, modal, toast, confirmDialog, byName,
-  avatar, cropImage,
+  avatar, cropImage, showSkyBadge,
 } from "../ui.js";
 import { GRADES } from "../config.js";
 import { moveStudent } from "./cells.js";
@@ -149,7 +149,7 @@ function draw(root) {
         <td class="num" title="교적 번호 ${s.seq ?? "-"}">${i + 1}</td>
         <td><span style="display:inline-flex;align-items:center;gap:8px">
             ${avatar(s.name, photoOf(s.id), 26)}
-            <b>${esc(s.name)}</b></span>${s.is_promoted
+            <b>${esc(s.name)}</b></span>${showSkyBadge() && s.is_promoted
               ? ' <span class="badge blue" title="초등부 하늘아이에서 올라온 아이">하늘아이</span>' : ""}
             ${statusOf(s) === "장기결석" ? ' <span class="badge warn">장기결석</span>' : ""}
             ${statusOf(s) === "졸업" ? ' <span class="badge">졸업</span>' : ""}</td>
@@ -366,7 +366,7 @@ export function showStudent(s, after) {
       </div>
       <div class="detail-grid">
         <dt>이름</dt><dd><b>${esc(s.name)}</b>
-          ${s.is_promoted ? ' <span class="badge blue" title="초등부 하늘아이에서 올라온 아이">하늘아이</span>' : ""}
+          ${showSkyBadge() && s.is_promoted ? ' <span class="badge blue" title="초등부 하늘아이에서 올라온 아이">하늘아이</span>' : ""}
           ${statusOf(s) !== "재적" ? ` <span class="badge warn">${esc(statusOf(s))}</span>` : ""}</dd>
         <dt>성별 · 학년</dt><dd>${dash([s.gender, gradeOf(s)].filter(Boolean).join(" · "))}
           ${gradeOf(s) ? `<span style="color:var(--text-muted);font-size:12px">· ${esc(gradeWithYear(s))}${

@@ -2,6 +2,15 @@
 //  UI 헬퍼
 // ============================================================
 
+// «하늘아이» 배지 온/오프 (올해중1 화면에서 켜고 끄면 주소록·셀편성에도 같이 적용됩니다)
+const SKY_KEY = "kkumttang.promoted.showSky";
+export function showSkyBadge() {
+  try { return localStorage.getItem(SKY_KEY) !== "off"; } catch { return true; }
+}
+export function setShowSkyBadge(v) {
+  try { localStorage.setItem(SKY_KEY, v ? "on" : "off"); } catch {}
+}
+
 /** HTML 이스케이프 */
 export function esc(v) {
   if (v === null || v === undefined) return "";
