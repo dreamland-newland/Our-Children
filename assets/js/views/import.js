@@ -17,6 +17,15 @@ let fileName = "";
 let photoRows = [];      // 사진 일괄 올리기 — 파일에서 꺼낸 사진 목록
 let photoAsTeacher = false;
 
+// ── 양식 파일 — 세 시트를 담은 한 파일. «전체» 또는 시트 하나만 받을 수 있습니다 ──
+const TEMPLATE_FILE = "./assets/templates/import-template.xlsx";
+const TEMPLATE_SHEETS = [
+  { key: null,          label: "전체 (세 시트 모두)", desc: "학생명단 · 셀편성 · 교사간사연락처" },
+  { key: "학생명단",     label: "학생명단만",         desc: "주소록에 올릴 아이들 정보" },
+  { key: "셀편성",       label: "셀편성만",           desc: "셀별 담당 · 아이 배정" },
+  { key: "교사간사연락처", label: "교사간사연락처만",   desc: "교사·간사 연락처" },
+];
+
 // ── 헤더 별칭 사전 ────────────────────────────────────────
 const ALIASES = {
   name:         ["이름", "성명", "학생명", "성함", "name"],
@@ -458,20 +467,26 @@ export function html() {
         올린 내용을 먼저 보여 드리고, <b>«반영하기»를 눌러야</b> 저장됩니다.</p>
     </div>
     <div class="page-actions">
-      <a class="btn btn-sm" id="tplBtn" href="./assets/templates/import-template.xlsx"
-         download="꿈땅새땅_가져오기_양식.xlsx">📥 양식 파일 받기</a>
+      <button class="btn btn-sm" id="tplBtn" type="button">📥 양식 파일 받기 ▾</button>
     </div>
   </div>
 
   <div class="card" id="drop" style="border-style:dashed;border-width:2px;text-align:center;
        padding:44px 20px;cursor:pointer;transition:background .15s">
     <div style="font-size:34px;line-height:1">📄</div>
-    <div style="font-weight:650;margin-top:10px">여기에 파일을 끌어다 놓거나 클릭해서 선택하세요</div>
+    <div style="font-weight:650;margin-top:10px">여기에 파일을 끌어다 놓거나 클릭해서 선택하세요 (여러 개도 됩니다)</div>
     <div style="color:var(--text-muted);font-size:13px;margin-top:5px">
-      .xlsx · .csv — <b>학생명단 · 셀편성 · 교사간사연락처</b> 세 가지를 알아봅니다.
-      오른쪽 위 «양식 파일 받기» 로 받은 파일에 채워 넣어 주세요.</div>
-    <input type="file" id="file" accept=".xlsx,.xls,.csv" style="display:none">
+      .xlsx · .csv — <b>학생명단 · 셀편성 · 교사간사연락처</b> 양식 파일은 물론,
+      사진관에서 받은 <b>사진이 박힌 반별 사진 대장</b> 엑셀도 그대로 놓으면 알아서 나눠 처리합니다.</div>
+    <input type="file" id="file" accept=".xlsx,.xls,.csv" multiple style="display:none">
   </div>
+
+  <label class="chk" style="margin-top:10px">
+    <input type="checkbox" id="photoIsTeacher">
+    <span>함께 놓은 사진 대장은 학생이 아니라 <b>교사·간사</b> 사진입니다</span>
+  </label>
+
+  <div id="photoResult" style="margin-top:14px"></div>
 
   <div class="card card-pad" style="margin-top:16px">
     <div class="section-label" style="margin-top:0">어떻게 되는 건가요</div>
@@ -486,68 +501,15 @@ export function html() {
   </div>
 
   <div class="card card-pad" style="margin-top:16px">
-    <div class="section-label" style="margin-top:0">어떤 시트가 어디로 들어가나요</div>
-    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">
-      올릴 수 있는 것은 <b>이 세 가지</b>입니다. «양식 파일 받기» 를 누르면 세 시트가 한 파일로 들어 있습니다.
-    </div>
-    <div class="rowmap">
-      <div><b>학생명단</b><span>→ 주소록. 이미 있는 아이는 <b>정보만 고쳐지고</b>, 없던 아이는 새로 등록됩니다</span></div>
-      <div><b>셀편성</b><span>→ 셀편성 화면에 <b>새 편성 버전</b>으로. 셀리더·셀헬퍼도 함께 들어갑니다</span></div>
-      <div><b>교사간사연락처</b><span>→ 교사·간사 명부. 회원가입 «나예요!» 확인에 쓰입니다</span></div>
-    </div>
-    <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px">
-      생일 명단과 «올해 중1» 화면은 따로 올리지 않습니다 — <b>생년월일만 있으면 저절로</b> 만들어집니다.
-      새로 올라온 아이들만 올리실 때는 시트 이름을 <b>«올해중1»</b> 로 두시면,
-      그때 <b>새로 등록되는 아이에게만</b> «하늘아이» 표시가 붙습니다.
-      아이 한 명 고치기·셀 하나 옮기기는 파일보다 앱에서 하시는 편이 빠릅니다.
-    </div>
-    <div class="form-note warn-note" style="margin-top:12px">
+    <div class="form-note warn-note" style="margin:0">
       <b>양식을 바꾸지 말아 주세요.</b> 아래 세 가지만 지키면 나머지는 자유롭게 쓰셔도 됩니다.
       <div style="margin-top:6px">
         ① <b>머리글 줄</b>(이름 · 교사/간사 · 생년월일 …)의 <b>칸 이름을 바꾸거나 지우지 마세요.</b>
            칸 순서를 옮기거나 필요 없는 칸을 빼는 건 괜찮습니다.<br>
-        ② <b>머리글 줄 위에는 메모를 넣지 마세요.</b> 굳이 넣으신다면 «이름» «학년» «생일» 같은
-           <b>칸 이름과 같은 낱말은 피해</b> 주세요 — 그 줄을 머리글로 착각할 수 있습니다.<br>
+        ② <b>머리글 줄 위에는 메모를 넣지 마세요.</b><br>
         ③ <b>시트 이름</b>은 양식에 있는 그대로(«학생명단» · «셀편성» · «교사간사연락처») 두세요.
-           앱이 무엇으로 읽을지 이 이름으로 먼저 판단합니다.
-      </div>
-      <div style="margin-top:6px">
-        올리시면 <b>«이 시트를 ○○로 봤습니다»</b> 와 <b>못 알아본 칸</b>을 먼저 보여 드립니다.
-        거기서 어긋난 곳을 바로 확인하실 수 있습니다.
       </div>
     </div>
-  </div>
-
-  <div class="card card-pad" style="margin-top:16px;font-size:13px;color:var(--text-secondary)">
-    <b>인식하는 열 이름</b> — 이름 · 성별 · 학년 · 학교 · 생년월일 · 전화번호(연락처·휴대폰) ·
-    어머니성함/연락처 · 아버지성함/연락처 · 형제관계 · 집주소 · 비고(특이사항) · 셀 · 구분 · 자리.
-    띄어쓰기나 순서가 달라도 됩니다. 파일에 <b>없는 열은 기존 값을 그대로 둡니다.</b>
-    <div style="margin-top:6px">
-      <b>셀리더 · 셀헬퍼</b>는 셀편성 표에서 <b>«자리»</b> 열에 «셀리더»·«셀헬퍼»(리더·헬퍼도 됩니다)라고 적거나,
-      이름 칸에 <b>홍길동(리더)</b> · <b>★홍길동</b> 처럼 적어 두면 그대로 읽어옵니다.
-      아이들 중에서 세우는 자리라, <b>편성을 새로 짜면 함께 새로 정합니다.</b>
-    </div>
-  </div>
-
-  <div class="card card-pad" style="margin-top:16px">
-    <div class="section-label" style="margin-top:0">사진만 한꺼번에 올리기 (선택)</div>
-    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">
-      사진관에서 반별로 만들어 준 <b>«사진 대장»</b> 엑셀(사진 줄 바로 아래 같은 열에 이름이 적힌 표)이 있다면,
-      거기 박힌 사진을 한 번에 꺼내 <b>이름이 같은 사람</b>에게 넣어 드립니다.
-      위 세 가지 명부와는 <b>다른 파일이어도</b> 됩니다 — 사진과 그 바로 아래 이름 칸만 봅니다.
-    </div>
-    <label class="chk" style="margin-bottom:10px">
-      <input type="checkbox" id="photoIsTeacher">
-      <span>이 사진들은 학생이 아니라 <b>교사·간사</b> 사진입니다</span>
-    </label>
-    <div class="card" id="photoDrop" style="border-style:dashed;border-width:2px;text-align:center;
-         padding:26px 20px;cursor:pointer;transition:background .15s">
-      <div style="font-weight:650">여기에 사진 대장 엑셀을 끌어다 놓거나 클릭하세요 (여러 개 한 번에 가능)</div>
-      <div style="color:var(--text-muted);font-size:12.5px;margin-top:4px">
-        .xlsx 파일 — 사진이 실제로 박혀 있어야 합니다 (사진을 나중에 붙여넣은 파일은 못 읽습니다)</div>
-      <input type="file" id="photoFile" accept=".xlsx" multiple style="display:none">
-    </div>
-    <div id="photoResult" style="margin-top:14px"></div>
   </div>
 
   <div id="result" style="margin-top:16px"></div>`;
@@ -565,31 +527,162 @@ export function mount(root, rerender) {
   drop.addEventListener("dragleave", () => { drop.style.background = ""; });
   drop.addEventListener("drop", (e) => {
     e.preventDefault(); drop.style.background = "";
-    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0], root, rerender);
+    if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files, root, rerender);
   });
   input.addEventListener("change", () => {
-    if (input.files[0]) handleFile(input.files[0], root, rerender);
+    if (input.files.length) handleFiles(input.files, root, rerender);
+    input.value = "";        // 같은 파일을 다시 골라도 change 가 일어나도록
   });
 
-  const photoDrop = root.querySelector("#photoDrop");
-  const photoInput = root.querySelector("#photoFile");
-  photoDrop?.addEventListener("click", () => photoInput.click());
-  photoDrop?.addEventListener("dragover", (e) => {
-    e.preventDefault(); photoDrop.style.background = "var(--surface-2)";
-  });
-  photoDrop?.addEventListener("dragleave", () => { photoDrop.style.background = ""; });
-  photoDrop?.addEventListener("drop", (e) => {
-    e.preventDefault(); photoDrop.style.background = "";
-    if (e.dataTransfer.files.length) handlePhotoFiles([...e.dataTransfer.files], root, rerender);
-  });
-  photoInput?.addEventListener("change", () => {
-    if (photoInput.files.length) handlePhotoFiles([...photoInput.files], root, rerender);
-  });
   root.querySelector("#photoIsTeacher")?.addEventListener("change", (e) => {
     photoAsTeacher = e.target.checked;
     photoRows = [];
     drawPhotoResult(root, rerender);
   });
+
+  // ── 양식 파일 받기 — 마우스를 대면(또는 눌러서) 시트 하나만 골라 받을 수 있습니다
+  const tplBtn = root.querySelector("#tplBtn");
+  let tplClose = null;
+  const toggleTplMenu = () => {
+    if (tplClose) { tplClose(); tplClose = null; return; }
+    tplClose = openTemplateMenu(tplBtn, () => { tplClose = null; });
+  };
+  tplBtn?.addEventListener("mouseenter", () => { if (!tplClose) tplClose = openTemplateMenu(tplBtn, () => { tplClose = null; }); });
+  tplBtn?.addEventListener("click", (e) => { e.preventDefault(); toggleTplMenu(); });
+}
+
+/** 여러 파일을 한 번에 받습니다 — 명부 양식이면 «가져오기» 로, 사진 대장이면 «사진 꺼내기» 로 알아서 나눕니다 */
+async function handleFiles(fileList, root, rerender) {
+  const files = [...fileList].filter(Boolean);
+  if (!files.length) return;
+  const res = root.querySelector("#result");
+  res.innerHTML = `<div class="card card-pad"><div class="empty">파일을 읽는 중…</div></div>`;
+
+  // 1) «실제로 사진이 박혀 있는» 파일부터 가려냅니다 — 사진 대장 파일은 이름 칸이
+  //    표 머리처럼 보일 때가 있어서, 박힌 사진이 있으면 그쪽이 훨씬 분명한 신호입니다.
+  let extractFn = null;
+  try { ({ extractPhotosFromWorkbook: extractFn } = await import("../xlsx-photos.js")); } catch { /* 무시 */ }
+  const photoFiles = [];
+  const rest = [];
+  for (const file of files) {
+    let photos = [];
+    if (extractFn) { try { photos = await extractFn(file); } catch { photos = []; } }
+    (photos.length ? photoFiles : rest).push(file);
+  }
+
+  // 2) 남은 파일 중에서 명부(학생명단·셀편성·교사간사연락처) 양식을 찾습니다.
+  let X;
+  try { X = await loadXLSX(); }
+  catch (e) {
+    res.innerHTML = `<div class="card card-pad"><div class="form-error" style="margin:0">
+      엑셀 도구를 불러오지 못했습니다: ${esc(e.message)}</div></div>`;
+    return;
+  }
+  const parsed = [];
+  const failed = [];
+  for (const file of rest) {
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = X.read(buf, { type: "array", cellDates: true });
+      const analyzed = wb.SheetNames.map((n) => {
+        const aoa = X.utils.sheet_to_json(wb.Sheets[n], { header: 1, blankrows: true, defval: null });
+        return analyzeSheet(n, aoa);
+      });
+      parsed.push({ file, analyzed });
+    } catch (e) { console.error(e); failed.push(file.name); }
+  }
+  if (failed.length) toast(`다음 파일은 읽지 못했습니다: ${failed.join(", ")}`, "err");
+
+  // 실제 내용이 있는 파일을 먼저 찾고, 없으면 «아직 예시만 있는 빈 양식» 이라도 하나 보여 줍니다.
+  const hasData = (p) => p.analyzed.some((s) => ["students", "teachers", "cells"].includes(s.kind));
+  const isBlankTpl = (p) => p.analyzed.some((s) => s.kind === "blank");
+  const rosterPick = parsed.find(hasData) || parsed.find(isBlankTpl) || null;
+  const leftover = parsed.filter((p) => p !== rosterPick).map((p) => p.file.name);
+  if (leftover.length) toast(`다음 파일은 알아보지 못해 건너뛰었습니다: ${leftover.join(", ")}`, "err");
+
+  if (rosterPick) {
+    fileName = rosterPick.file.name;
+    sheets = rosterPick.analyzed;
+    drawResult(root, rerender);
+  } else {
+    res.innerHTML = "";
+  }
+  if (photoFiles.length) await handlePhotoFiles(photoFiles, root, rerender);
+  else if (!rosterPick && !leftover.length) res.innerHTML = `<div class="card card-pad"><div class="empty">
+    올릴 내용을 찾지 못했습니다. «학생명단·셀편성·교사간사연락처» 양식 파일이거나,
+    사진이 실제로 박힌 사진 대장 엑셀인지 확인해 주세요.</div></div>`;
+}
+
+// ── 양식 파일 받기 — 마우스를 대면 나오는 작은 목록 ─────────────
+function openTemplateMenu(btn, onClose) {
+  document.querySelector(".hpop")?.remove();
+  const pop = document.createElement("div");
+  pop.className = "hpop";
+  pop.innerHTML = `
+    <div class="hpop-head">받으실 양식을 골라 주세요</div>
+    <div class="hpop-list">
+      ${TEMPLATE_SHEETS.map((s) => `
+      <button class="hpop-item" data-tpl="${esc(s.key || "")}">${esc(s.label)}<span>${esc(s.desc)}</span></button>`).join("")}
+    </div>`;
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect();
+  pop.style.top = `${window.scrollY + r.bottom + 6}px`;
+  pop.style.left = `${Math.max(8, Math.min(window.scrollX + r.left,
+    window.scrollX + window.innerWidth - pop.offsetWidth - 8))}px`;
+
+  const close = () => {
+    pop.remove();
+    document.removeEventListener("click", onOut, true);
+    document.removeEventListener("keydown", onKey);
+    onClose?.();
+  };
+  pop.querySelectorAll("[data-tpl]").forEach((b) => b.addEventListener("click", () => {
+    downloadTemplate(b.dataset.tpl || null);
+    close();
+  }));
+  const onOut = (e) => { if (!pop.contains(e.target) && e.target !== btn) close(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  setTimeout(() => {
+    document.addEventListener("click", onOut, true);
+    document.addEventListener("keydown", onKey);
+  }, 0);
+  return close;
+}
+
+/** 양식 파일 받기 — sheetName 이 없으면 세 시트 그대로, 있으면 «읽어보기»와 그 시트만 담아 내려받습니다 */
+async function downloadTemplate(sheetName) {
+  try {
+    const res = await fetch(TEMPLATE_FILE);
+    const buf = await res.arrayBuffer();
+    if (!sheetName) {
+      const blob = new Blob([buf], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      saveBlob(blob, "꿈땅새땅_가져오기_양식.xlsx");
+      return;
+    }
+    const X = await loadXLSX();
+    const src = X.read(buf, { type: "array" });
+    const wb = X.utils.book_new();
+    if (src.Sheets["읽어보기"]) X.utils.book_append_sheet(wb, src.Sheets["읽어보기"], "읽어보기");
+    X.utils.book_append_sheet(wb, src.Sheets[sheetName], sheetName);
+    const out = X.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([out], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    saveBlob(blob, `꿈땅새땅_${sheetName}_양식.xlsx`);
+  } catch (e) {
+    console.error(e);
+    toast("양식 파일을 만들지 못했습니다: " + e.message, "err");
+  }
+}
+function saveBlob(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -601,10 +694,17 @@ async function handlePhotoFiles(fileList, root, rerender) {
   photoAsTeacher = !!root.querySelector("#photoIsTeacher")?.checked;
   const pool = photoAsTeacher ? state.teachers : state.students;
   const rows = [];
-  try {
-    const { extractPhotosFromWorkbook } = await import("../xlsx-photos.js");
-    for (const file of fileList) {
-      const extracted = await extractPhotosFromWorkbook(file);
+  let extractFn;
+  try { ({ extractPhotosFromWorkbook: extractFn } = await import("../xlsx-photos.js")); }
+  catch (e) {
+    console.error(e);
+    res.innerHTML = `<div class="form-error" style="margin:0">사진 꺼내는 도구를 불러오지 못했습니다: ${esc(e.message)}</div>`;
+    return;
+  }
+  // 파일 하나가 사진 대장이 아니어서 실패해도, 나머지 파일은 계속 시도합니다
+  for (const file of fileList) {
+    try {
+      const extracted = await extractFn(file);
       for (const item of extracted) {
         const hits = item.name ? pool.filter((p) => nameKey(p.name) === nameKey(item.name)) : [];
         rows.push({
@@ -613,15 +713,13 @@ async function handlePhotoFiles(fileList, root, rerender) {
           chosenId: hits.length ? hits[0].id : null,
         });
       }
-    }
-  } catch (e) {
-    console.error(e);
-    res.innerHTML = `<div class="form-error" style="margin:0">사진을 꺼내지 못했습니다: ${esc(e.message)}</div>`;
-    return;
+    } catch (e) { console.error(e); }
   }
   if (!rows.length) {
     res.innerHTML = `<div class="form-note" style="margin:0">
-      이 파일에서 사진을 찾지 못했습니다. 사진이 실제로 셀 위에 «박혀» 있는 엑셀인지 확인해 주세요.</div>`;
+      ${fileList.length > 1 ? "이 파일들에서" : "이 파일에서"} 알아볼 내용을 찾지 못했습니다.
+      <b>학생명단·셀편성·교사간사연락처</b> 양식 파일이거나, 사진이 실제로 셀 위에 «박혀» 있는
+      사진 대장 엑셀인지 확인해 주세요.</div>`;
     return;
   }
   photoRows = rows;
@@ -705,26 +803,6 @@ async function applyPhotos(root, rerender) {
   if (res) res.innerHTML = "";
   toast(fail ? `${ok}장을 올렸습니다. ${fail}장은 올리지 못했습니다.` : `${ok}장을 올렸습니다.`, fail ? "err" : "");
   rerender();
-}
-
-async function handleFile(file, root, rerender) {
-  const res = root.querySelector("#result");
-  res.innerHTML = `<div class="card card-pad"><div class="empty">파일을 읽는 중…</div></div>`;
-  try {
-    const X = await loadXLSX();
-    const buf = await file.arrayBuffer();
-    const wb = X.read(buf, { type: "array", cellDates: true });
-    fileName = file.name;
-    sheets = wb.SheetNames.map((n) => {
-      const aoa = X.utils.sheet_to_json(wb.Sheets[n], { header: 1, blankrows: true, defval: null });
-      return analyzeSheet(n, aoa);
-    });
-    drawResult(root, rerender);
-  } catch (e) {
-    console.error(e);
-    res.innerHTML = `<div class="card card-pad"><div class="form-error" style="margin:0">
-      파일을 읽지 못했습니다: ${esc(e.message)}</div></div>`;
-  }
 }
 
 function drawResult(root, rerender) {

@@ -15,30 +15,48 @@ import { login, signup, resetSignup } from "./views/auth.js";
 import { initInstallPrompt, nudgeInstallPrompt } from "./pwa.js";
 
 const ROUTES = {
-  "/":          { title: "개요",       nav: "개요",      view: { html: overview.overviewView, mount: overview.mount } },
-  "/students":  { title: "주소록",     nav: "주소록",    view: students },
-  "/cells":     { title: "셀편성",     nav: "셀편성",    view: cells },
-  "/birthdays": { title: "생일",       nav: "생일",      view: birthdays },
-  "/promoted":  { title: "올해 중1",   nav: "올해 중1",  view: promoted },
-  "/photos":    { title: "사진첩",     nav: "사진첩",    view: photos, staffOnly: true },
-  "/teachers":  { title: "교사·간사",  nav: "교사·간사", view: teachers },
-  "/import":    { title: "가져오기",   nav: "가져오기",  view: importer, staffOnly: true },
+  // «개요»는 화면 목록(위 채널)에는 두지 않습니다 — 왼쪽 위 로고를 누르면 바로 옵니다.
+  "/":          { title: "개요",       view: { html: overview.overviewView, mount: overview.mount } },
+  "/students":  { title: "주소록",     nav: "주소록",    view: students,  group: "roster" },
+  "/cells":     { title: "셀편성",     nav: "셀편성",    view: cells,     group: "roster" },
+  "/birthdays": { title: "생일",       nav: "생일",      view: birthdays, group: "roster" },
+  "/promoted":  { title: "올해 중1",   nav: "올해 중1",  view: promoted,  group: "roster" },
+  "/photos":    { title: "사진첩",     nav: "사진첩",    view: photos, staffOnly: true, group: "staff" },
+  "/teachers":  { title: "교사·간사",  nav: "교사·간사", view: teachers,  group: "staff" },
+  "/import":    { title: "가져오기",   nav: "가져오기",  view: importer, staffOnly: true, group: "staff" },
   "/login":     { title: "로그인",     view: login,  guestOnly: true },
   "/signup":    { title: "회원가입",   view: signup, guestOnly: true },
 };
 
 const appEl = document.getElementById("app");
 
-// ── 테마 ────────────────────────────────────────────────
-const savedTheme = localStorage.getItem("kkumttang.theme");
-if (savedTheme) document.documentElement.dataset.theme = savedTheme;
-
-document.getElementById("themeToggle").addEventListener("click", () => {
-  const cur = document.documentElement.dataset.theme
-    || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  const next = cur === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next;
-  localStorage.setItem("kkumttang.theme", next);
+// ── 테마 (라이트 · 시스템 · 다크) ────────────────────────
+//   저장된 값이 없거나 "system" 이면 data-theme 을 아예 없애서
+//   기기의 밝기 설정(prefers-color-scheme)을 그대로 따르게 둡니다.
+const THEME_MODES = ["light", "system", "dark"];
+function currentThemeMode() {
+  const saved = localStorage.getItem("kkumttang.theme");
+  return THEME_MODES.includes(saved) ? saved : "system";
+}
+function applyThemeMode(mode) {
+  if (mode === "light" || mode === "dark") document.documentElement.dataset.theme = mode;
+  else delete document.documentElement.dataset.theme;
+  localStorage.setItem("kkumttang.theme", mode);
+  syncThemeSeg();
+}
+function syncThemeSeg() {
+  const seg = document.getElementById("themeSeg");
+  if (!seg) return;
+  const mode = currentThemeMode();
+  const i = THEME_MODES.indexOf(mode);
+  seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+  const thumb = seg.querySelector(".tseg-thumb");
+  if (thumb) thumb.style.transform = `translateX(${i * 30}px)`;
+}
+applyThemeMode(currentThemeMode());
+document.getElementById("themeSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-mode]");
+  if (b) applyThemeMode(b.dataset.mode);
 });
 
 // ── 라우팅 ──────────────────────────────────────────────
@@ -49,9 +67,14 @@ const currentPath = () => {
 
 function renderNav(path) {
   const nav = document.getElementById("nav");
+  let lastGroup = null;
   nav.innerHTML = Object.entries(ROUTES)
     .filter(([, r]) => r.nav && (!r.staffOnly || isLoggedIn()))
-    .map(([p, r]) => `<a href="#${p}" data-route="${p}"${p === path ? ' class="active"' : ""}>${esc(r.nav)}</a>`)
+    .map(([p, r]) => {
+      const sep = lastGroup && r.group && r.group !== lastGroup ? '<span class="nav-sep"></span>' : "";
+      lastGroup = r.group || lastGroup;
+      return sep + `<a href="#${p}" data-route="${p}"${p === path ? ' class="active"' : ""}>${esc(r.nav)}</a>`;
+    })
     .join("");
 }
 

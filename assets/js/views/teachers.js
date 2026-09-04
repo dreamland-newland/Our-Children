@@ -1,12 +1,9 @@
 // ── 교사 / 간사 연락처 ─────────────────────────────────────
-import { state, api, isLoggedIn, isAdmin, teacherPhotoOf } from "../data.js";
+import { state, api, isLoggedIn, isAdmin, teacherPhotoOf, roleLabels, roleOptionRank } from "../data.js";
 import {
   esc, dash, telLink, fmtBirth, modal, toast, confirmDialog, avatar, byName, cropImage, blobToDataURL,
 } from "../ui.js";
 import { bindDownload as bindXlsx } from "../xlsx.js";
-
-const ROLES = ["담임목사", "교역자", "사모", "교사", "간사"];
-const ROLE_RANK = (r) => { const i = ROLES.indexOf(r); return i < 0 ? 99 : i; };
 
 // 정렬 상태 — 칸 머리를 눌러 마음대로 바꿀 수 있습니다
 const f = { sort: "seq", dir: 1 };
@@ -26,7 +23,7 @@ function sortedRows() {
   const key = f.sort;
   rows.sort((a, b) => {
     let x, y;
-    if (key === "role") { x = ROLE_RANK(a.role); y = ROLE_RANK(b.role); }
+    if (key === "role") { x = roleOptionRank(a.role); y = roleOptionRank(b.role); }
     else if (key === "user") { x = a.user_id ? 1 : 0; y = b.user_id ? 1 : 0; }
     else if (key === "name") { return byName(a.name, b.name) * f.dir; }
     else { x = a[key]; y = b[key]; }
@@ -49,11 +46,9 @@ export function html() {
     </div>
     <div class="page-actions">
       <button class="btn btn-sm" id="xlsxBtn">📥 엑셀 받기</button>
-      ${isAdmin() ? `<button class="btn btn-sm${state.pendingCount ? " btn-primary" : ""}" id="accounts">
-                       👥 가입 승인 · 계정${state.pendingCount
-                         ? ` <span class="badge orange" style="margin-left:2px">${state.pendingCount}</span>` : ""}</button>
-                     <button class="btn btn-sm" id="signupCfg">🔐 가입 신청 설정</button>
-                     <button class="btn btn-sm" id="notifyCfg">🔔 알림 설정</button>` : ""}
+      ${isAdmin() ? `<button class="btn btn-sm${state.pendingCount ? " btn-primary" : ""}" id="adminSettings">
+                       ⚙️ 관리자 설정${state.pendingCount
+                         ? ` <span class="badge orange" style="margin-left:2px">${state.pendingCount}</span>` : ""}</button>` : ""}
       ${isLoggedIn() ? `<button class="btn btn-primary btn-sm" id="addBtn">＋ 교사·간사 등록</button>` : ""}
     </div>
   </div>
@@ -70,9 +65,9 @@ export function html() {
     <table class="data">
       <thead><tr>${headRow()}</tr></thead>
       <tbody>
-        ${rows.map((t) => `
+        ${rows.map((t, i) => `
         <tr data-id="${t.id}">
-          <td class="num">${t.seq ?? ""}</td>
+          <td class="num" title="교적 번호 ${t.seq ?? "-"}">${i + 1}</td>
           <td><span style="display:inline-flex;align-items:center;gap:8px">
               ${avatar(t.name, teacherPhotoOf(t.id), 26)}
               <b>${esc(t.name)}</b></span></td>
@@ -111,10 +106,8 @@ function headRow() {
 }
 
 export function mount(root, rerender) {
-  root.querySelector("#accounts")?.addEventListener("click", () => accountPanel(rerender));
-  root.querySelector("#accounts2")?.addEventListener("click", () => accountPanel(rerender));
-  root.querySelector("#signupCfg")?.addEventListener("click", () => signupSettings(rerender));
-  root.querySelector("#notifyCfg")?.addEventListener("click", () => notifySettings());
+  root.querySelector("#adminSettings")?.addEventListener("click", () => openAdminSettings(rerender));
+  root.querySelector("#accounts2")?.addEventListener("click", () => openAdminSettings(rerender, "accounts"));
   root.querySelector("#addBtn")?.addEventListener("click", () => editTeacher(null, rerender));
   root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () =>
     editTeacher(state.teachers.find((t) => t.id === b.dataset.edit), rerender)));
@@ -130,32 +123,164 @@ export function mount(root, rerender) {
 
 }
 
-// ── 관리자: 가입 신청 알림 메일 ────────────────────────────
-async function notifySettings() {
+// ════════════════════════════════════════════════════════════
+//  관리자 설정 — 가입 승인·계정 / 가입 신청 / 알림 / 직함 관리를
+//  «설정» 한 곳에 모아 두고, 왼쪽 목록에서 골라 보는 방식으로 묶었습니다.
+// ════════════════════════════════════════════════════════════
+const SETTINGS_SECTIONS = [
+  { key: "accounts", icon: "👥", label: "가입 승인 · 계정", render: paneAccounts,
+    badge: () => state.pendingCount || 0 },
+  { key: "signup",   icon: "🔐", label: "가입 신청 설정",   render: paneSignup },
+  { key: "notify",   icon: "🔔", label: "알림 설정",        render: paneNotify },
+  { key: "roles",    icon: "🏷️", label: "직함 관리",        render: paneRoles },
+];
+
+function openAdminSettings(after, initial = "accounts") {
+  let sec = initial;
+  const shell = document.createElement("div");
+  shell.className = "settings-shell";
+  const navEl = document.createElement("div");
+  navEl.className = "settings-nav";
+  const paneEl = document.createElement("div");
+  paneEl.className = "settings-pane";
+  shell.append(navEl, paneEl);
+
+  const drawNav = () => {
+    navEl.innerHTML = SETTINGS_SECTIONS.map((s) => {
+      const badge = s.badge?.();
+      return `
+      <button type="button" class="snav-item${sec === s.key ? " on" : ""}" data-sec="${s.key}">
+        <span class="snav-ico">${s.icon}</span><span class="snav-label">${esc(s.label)}</span>
+        ${badge ? `<span class="badge orange" style="margin-left:auto">${badge}</span>` : ""}
+      </button>`;
+    }).join("");
+    navEl.querySelectorAll("[data-sec]").forEach((b) => b.addEventListener("click", () => {
+      if (b.dataset.sec === sec) return;
+      sec = b.dataset.sec; drawNav(); drawPane();
+    }));
+  };
+  const drawPane = () => {
+    paneEl.innerHTML = "";
+    const s = SETTINGS_SECTIONS.find((x) => x.key === sec);
+    s.render(paneEl, () => { drawNav(); after?.(); });
+  };
+  drawNav(); drawPane();
+
+  modal({
+    title: "관리자 설정", wide: true, body: shell,
+    footer: `<button class="btn" data-close>닫기</button>`,
+  });
+}
+
+// ── 직함 관리 (담임목사·교역자 등, 관리자가 늘리고 줄이고 이름 바꾸기) ──
+function paneRoles(pane, after) {
+  const draw = () => {
+    const list = [...state.roleOptions].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    const usedBy = (label) => state.teachers.filter((t) => t.role === label).length;
+    pane.innerHTML = `
+      <div class="form-note" style="margin-top:0">
+        여기서 늘리고 줄이고 이름을 바꾼 직함이 <b>교사·간사 등록</b> 화면의 «구분» 목록에 그대로 나옵니다.
+        ${!list.length ? `<div style="margin-top:6px;color:var(--critical)">
+          아직 설치되지 않았을 수 있습니다 — <b>supabase/08_role_options.sql</b> 을 한 번 실행해 주세요.
+          (실행 전에는 기존 다섯 가지 직함이 그대로 쓰입니다)</div>` : ""}
+      </div>
+      <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        ${list.map((r, i) => `
+        <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;
+                    border-bottom:1px solid var(--grid)">
+          <div style="display:flex;flex-direction:column;gap:1px">
+            <button type="button" class="btn btn-ghost btn-sm" data-up="${r.id}" ${i === 0 ? "disabled" : ""}
+              style="padding:0 6px;line-height:1.3" title="위로">▲</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-down="${r.id}" ${i === list.length - 1 ? "disabled" : ""}
+              style="padding:0 6px;line-height:1.3" title="아래로">▼</button>
+          </div>
+          <b style="flex:1;font-size:14px">${esc(r.label)}</b>
+          <span style="font-size:11.5px;color:var(--text-muted)">${usedBy(r.label)}명</span>
+          <button type="button" class="btn btn-sm" data-ren="${r.id}">이름 바꾸기</button>
+          <button type="button" class="btn btn-sm btn-danger" data-del="${r.id}">삭제</button>
+        </div>`).join("") || `<div class="empty" style="padding:20px 0">직함이 없습니다.</div>`}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <input type="text" id="newRole" placeholder="새 직함 이름 (예: 청년교사)" style="flex:1">
+        <button type="button" class="btn btn-primary btn-sm" id="addRole">추가</button>
+      </div>`;
+    bind();
+  };
+
+  const act = async (fn) => {
+    try { await fn(); draw(); after?.(); }
+    catch (e) { toast(e.message, "err"); }
+  };
+
+  const renamePrompt = (id) => {
+    const r = state.roleOptions.find((x) => x.id === id);
+    const form = document.createElement("form");
+    form.id = "renForm";
+    form.innerHTML = `<div class="field"><label>새 이름</label>
+      <input type="text" name="label" required value="${esc(r?.label || "")}"></div>`;
+    modal({
+      title: "직함 이름 바꾸기", narrow: true, body: form,
+      footer: `<button class="btn" data-close>취소</button>
+               <button class="btn btn-primary" form="renForm" type="submit">저장</button>`,
+      onMount(box, close) {
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const v = new FormData(form).get("label").trim();
+          try { await api.renameRoleOption(id, v); close(); draw(); after?.(); toast("직함 이름을 바꿨습니다."); }
+          catch (err) { toast(err.message, "err"); }
+        });
+      },
+    });
+  };
+
+  const bind = () => {
+    pane.querySelectorAll("[data-up]").forEach((b) => b.addEventListener("click", () =>
+      act(() => api.moveRoleOption(b.dataset.up, -1))));
+    pane.querySelectorAll("[data-down]").forEach((b) => b.addEventListener("click", () =>
+      act(() => api.moveRoleOption(b.dataset.down, 1))));
+    pane.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
+      const r = state.roleOptions.find((x) => x.id === b.dataset.del);
+      if (!(await confirmDialog(`«${r.label}» 직함을 지울까요?`))) return;
+      act(() => api.deleteRoleOption(b.dataset.del));
+    }));
+    pane.querySelectorAll("[data-ren]").forEach((b) => b.addEventListener("click", () => renamePrompt(b.dataset.ren)));
+    pane.querySelector("#addRole")?.addEventListener("click", () => {
+      const el = pane.querySelector("#newRole");
+      const v = el.value.trim();
+      if (!v) return;
+      el.value = "";
+      act(() => api.addRoleOption(v));
+    });
+    pane.querySelector("#newRole")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); pane.querySelector("#addRole").click(); }
+    });
+  };
+
+  draw();
+}
+
+// ── 가입 신청 알림 메일 ────────────────────────────────────
+async function paneNotify(pane) {
   let st = null;
   try { st = await api.notifyStatus(); }
-  catch (e) { return toast(e.message, "err"); }
+  catch (e) { pane.innerHTML = `<div class="form-note" style="margin-top:0">${esc(e.message)}</div>`; return; }
 
   // 아직 06_notify_email.sql 을 실행하지 않은 교적부
   if (!st) {
-    return modal({
-      title: "가입 신청 알림 메일", narrow: true,
-      body: `
-        <div class="form-note" style="margin:0">
-          아직 <b>알림 기능이 설치되지 않았습니다.</b>
-          <div style="margin-top:8px">
-            저장소의 <b>supabase/06_notify_email.sql</b> 파일 맨 위 안내를 따라
-            한 번만 설정하면, 가입 신청이 들어올 때 <b>메일로 바로 알려 드립니다.</b>
-            (무료 · 10분 정도 걸립니다)
-          </div>
-        </div>`,
-      footer: `<button class="btn" data-close>닫기</button>`,
-    });
+    pane.innerHTML = `
+      <div class="form-note" style="margin-top:0">
+        아직 <b>알림 기능이 설치되지 않았습니다.</b>
+        <div style="margin-top:8px">
+          저장소의 <b>supabase/06_notify_email.sql</b> 파일 맨 위 안내를 따라
+          한 번만 설정하면, 가입 신청이 들어올 때 <b>메일로 바로 알려 드립니다.</b>
+          (무료 · 10분 정도 걸립니다)
+        </div>
+      </div>`;
+    return;
   }
 
-  const box = document.createElement("div");
   const draw = () => {
-    box.innerHTML = `
+    pane.innerHTML = `
       ${st.ready ? "" : `<div class="form-note warn-note" style="margin:0 0 12px">
         <b>메일 보내는 곳이 아직 연결되지 않았습니다.</b>
         <b>supabase/06_notify_email.sql</b> 맨 아래 «설정 넣기» 를 마쳐 주세요.</div>`}
@@ -173,58 +298,50 @@ async function notifySettings() {
       </div>
       <label class="chk" style="margin-top:10px">
         <input type="checkbox" id="nOn"${st.enabled ? " checked" : ""}>
-        <span>알림 메일 보내기</span></label>`;
+        <span>알림 메일 보내기</span></label>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button type="button" class="btn btn-sm" id="nTest">시험 메일 보내기</button>
+        <button type="button" class="btn btn-primary btn-sm" id="nSave">저장</button>
+      </div>`;
+
+    const emails = () => pane.querySelector("#nEmails").value
+      .split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
+
+    pane.querySelector("#nSave").addEventListener("click", async () => {
+      const list = emails();
+      const bad = list.filter((e) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+      if (bad.length) return toast(`메일 주소가 이상합니다: ${bad[0]}`, "err");
+      try {
+        await api.setNotifyEmails(list, pane.querySelector("#nOn").checked);
+        toast(list.length ? `${list.length}곳으로 알림이 갑니다.` : "알림 받을 주소를 비웠습니다.");
+      } catch (e) { toast(e.message, "err"); }
+    });
+
+    pane.querySelector("#nTest").addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      const list = emails();
+      if (!list.length) return toast("먼저 받을 주소를 적어 주세요.", "err");
+      btn.disabled = true; btn.textContent = "보내는 중…";
+      try {
+        await api.setNotifyEmails(list, pane.querySelector("#nOn").checked);
+        const ok = await api.notifyTest();
+        toast(ok ? "시험 메일을 보냈습니다. 1분 안에 도착합니다."
+                 : "아직 메일 설정이 끝나지 않았습니다 (06_notify_email.sql 확인).",
+              ok ? "" : "err");
+      } catch (err) { toast(err.message, "err"); }
+      finally { btn.disabled = false; btn.textContent = "시험 메일 보내기"; }
+    });
   };
   draw();
-
-  modal({
-    title: "가입 신청 알림 메일", narrow: true, body: box,
-    footer: `<button class="btn" data-test>시험 메일 보내기</button>
-             <div style="flex:1"></div>
-             <button class="btn" data-close>닫기</button>
-             <button class="btn btn-primary" data-save>저장</button>`,
-    onMount(b, close) {
-      const emails = () => box.querySelector("#nEmails").value
-        .split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
-
-      b.querySelector("[data-save]").addEventListener("click", async () => {
-        const list = emails();
-        const bad = list.filter((e) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
-        if (bad.length) return toast(`메일 주소가 이상합니다: ${bad[0]}`, "err");
-        try {
-          await api.setNotifyEmails(list, box.querySelector("#nOn").checked);
-          close();
-          toast(list.length ? `${list.length}곳으로 알림이 갑니다.` : "알림 받을 주소를 비웠습니다.");
-        } catch (e) { toast(e.message, "err"); }
-      });
-
-      b.querySelector("[data-test]").addEventListener("click", async (e) => {
-        const btn = e.currentTarget;
-        const list = emails();
-        if (!list.length) return toast("먼저 받을 주소를 적어 주세요.", "err");
-        btn.disabled = true; btn.textContent = "보내는 중…";
-        try {
-          await api.setNotifyEmails(list, box.querySelector("#nOn").checked);
-          const ok = await api.notifyTest();
-          toast(ok ? "시험 메일을 보냈습니다. 1분 안에 도착합니다."
-                   : "아직 메일 설정이 끝나지 않았습니다 (06_notify_email.sql 확인).",
-                ok ? "" : "err");
-        } catch (err) { toast(err.message, "err"); }
-        finally { btn.disabled = false; btn.textContent = "시험 메일 보내기"; }
-      });
-    },
-  });
 }
 
-// ── 관리자: 가입 승인 · 계정 · 관리자 권한 ──────────────────
-async function accountPanel(after) {
+// ── 가입 승인 · 계정 · 관리자 권한 ──────────────────────────
+async function paneAccounts(pane, after) {
   let rows = [], pool = [];
   try {
     rows = await api.listAccounts();
     pool = await api.unlinkedTeachers().catch(() => []);
-  } catch (e) { return toast(e.message, "err"); }
-
-  const box = document.createElement("div");
+  } catch (e) { pane.innerHTML = `<div class="form-note" style="margin-top:0">${esc(e.message)}</div>`; return; }
 
   /** 관리자가 «이 사람은 명부의 누구» 인지 고르는 칸 */
   const teacherSelect = (r) => {
@@ -244,7 +361,7 @@ async function accountPanel(after) {
     const pending = rows.filter((r) => !r.approved);
     const live = rows.filter((r) => r.approved);
 
-    box.innerHTML = `
+    pane.innerHTML = `
       ${pending.length ? `
       <div class="section-label" style="margin-top:0">
         승인 대기 <span class="badge orange">${pending.length}</span></div>
@@ -329,10 +446,10 @@ async function accountPanel(after) {
     } catch (e) { toast(e.message, "err"); await reload(); draw(); }
   };
 
-  const chosenTeacher = (id) => box.querySelector(`[data-teacher="${id}"]`)?.value || null;
+  const chosenTeacher = (id) => pane.querySelector(`[data-teacher="${id}"]`)?.value || null;
 
   const bind = () => {
-    box.querySelectorAll("[data-approve]").forEach((b) => b.addEventListener("click", async () => {
+    pane.querySelectorAll("[data-approve]").forEach((b) => b.addEventListener("click", async () => {
       const r = rows.find((x) => x.id === b.dataset.approve);
       const tid = chosenTeacher(r.id);
       const tName = tid ? (pool.find((t) => t.id === tid)?.name || r.teacher_name) : null;
@@ -344,7 +461,7 @@ async function accountPanel(after) {
       act(() => api.approveAccount(r.id, tid), `${r.name} 님의 가입을 승인했습니다.`);
     }));
 
-    box.querySelectorAll("[data-teacher]").forEach((sel) => sel.addEventListener("change", async () => {
+    pane.querySelectorAll("[data-teacher]").forEach((sel) => sel.addEventListener("change", async () => {
       const r = rows.find((x) => x.id === sel.dataset.teacher);
       if (!r.approved) return;                 // 대기 중인 건 «승인» 누를 때 함께 반영됩니다
       const tid = sel.value || null;
@@ -352,18 +469,18 @@ async function accountPanel(after) {
         tid ? `${r.name} 님의 명부 연결을 바꿨습니다.` : `${r.name} 님의 명부 연결을 풀었습니다.`);
     }));
 
-    box.querySelectorAll("[data-promote]").forEach((b) => b.addEventListener("click", () => {
+    pane.querySelectorAll("[data-promote]").forEach((b) => b.addEventListener("click", () => {
       const r = rows.find((x) => x.id === b.dataset.promote);
       act(() => api.setAdmin(r.id, true), `${r.name} 님을 관리자로 지정했습니다.`);
     }));
-    box.querySelectorAll("[data-demote]").forEach((b) => b.addEventListener("click", async () => {
+    pane.querySelectorAll("[data-demote]").forEach((b) => b.addEventListener("click", async () => {
       const r = rows.find((x) => x.id === b.dataset.demote);
       if (r.is_me && !(await confirmDialog(
         "본인의 관리자 권한을 내립니다. 되돌리려면 다른 관리자가 다시 지정해 주어야 합니다. 계속할까요?",
         { okText: "권한 내리기" }))) return;
       act(() => api.setAdmin(r.id, false), `${r.name} 님의 관리자 권한을 내렸습니다.`);
     }));
-    box.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
+    pane.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
       const r = rows.find((x) => x.id === b.dataset.revoke);
       const word = r.approved ? "계정을 해제" : "신청을 거절";
       if (!(await confirmDialog(
@@ -376,46 +493,30 @@ async function accountPanel(after) {
   };
 
   draw();
-  modal({
-    title: "가입 승인 · 계정 관리", body: box,
-    footer: `<button class="btn" data-close>닫기</button>`,
-  });
 }
 
-// ── 관리자: 가입 신청 받기 켬/끔 ───────────────────────────
-async function signupSettings(after) {
+// ── 가입 신청 받기 켬/끔 ────────────────────────────────────
+async function paneSignup(pane) {
   let cur = { is_open: true };
   try { cur = await api.signupRequirements(); } catch { /* 무시 */ }
-  const form = document.createElement("form");
-  form.id = "sgForm";
-  form.innerHTML = `
+  pane.innerHTML = `
     <div class="form-note" style="margin-top:0">
       가입은 <b>관리자 승인</b>으로 막습니다. 누가 신청하든 승인 전에는 아무것도 볼 수 없으니
       평소에는 켜 두셔도 됩니다.<br>
       모르는 신청이 자꾸 들어와 번거로울 때만 잠시 꺼 두세요.
     </div>
-    <div class="field">
-      <label style="display:flex;gap:8px;align-items:center;cursor:pointer">
-        <input type="checkbox" name="open" style="width:auto" ${cur.is_open ? "checked" : ""}>
-        <span>가입 신청 받기</span></label>
-      <span class="hint">끄면 아무도 새로 신청할 수 없습니다. 기존 계정은 그대로 쓰입니다.</span>
-    </div>`;
+    <label class="chk">
+      <input type="checkbox" id="sgOpen" ${cur.is_open ? "checked" : ""}>
+      <span>가입 신청 받기</span>
+    </label>
+    <div class="hint" style="margin-top:6px">끄면 아무도 새로 신청할 수 없습니다. 기존 계정은 그대로 쓰입니다.</div>`;
 
-  modal({
-    title: "가입 신청 설정", narrow: true, body: form,
-    footer: `<button class="btn" data-close>취소</button>
-             <button class="btn btn-primary" form="sgForm" type="submit">저장</button>`,
-    onMount(box, close) {
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const fd = new FormData(form);
-        try {
-          await api.setSignupOpen(fd.get("open") === "on");
-          close(); after?.();
-          toast(fd.get("open") === "on" ? "가입 신청을 받습니다." : "가입 신청을 닫았습니다.");
-        } catch (err) { toast(err.message, "err"); }
-      });
-    },
+  pane.querySelector("#sgOpen").addEventListener("change", async (e) => {
+    const checked = e.target.checked;
+    try {
+      await api.setSignupOpen(checked);
+      toast(checked ? "가입 신청을 받습니다." : "가입 신청을 닫았습니다.");
+    } catch (err) { toast(err.message, "err"); e.target.checked = !checked; }
   });
 }
 
@@ -448,7 +549,7 @@ export function editTeacher(t, after) {
       <div class="field"><label>이름</label>
         <input type="text" name="name" required value="${esc(t.name)}"></div>
       <div class="field"><label>구분</label>
-        <select name="role">${ROLES.map((r) =>
+        <select name="role">${roleLabels().map((r) =>
           `<option value="${r}"${(t.role || "간사") === r ? " selected" : ""}>${r}</option>`).join("")}</select></div>
     </div>
     <div class="grid grid-2" style="margin-top:12px">

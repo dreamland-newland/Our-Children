@@ -22,6 +22,18 @@ export const state = {
   profile: null,         // 승인된 로그인 사용자
   pending: null,         // 승인 대기 중인 신청 (로그인은 안 된 상태)
   pendingCount: 0,       // 관리자가 처리해야 할 가입 신청 수
+  roleOptions: [],       // 교사·간사 직함 목록 [{id,label,sort_order}] (관리자가 추가/삭제/수정)
+};
+
+// 교회에 아직 직함 목록이 없을 때(맨 처음) 채워 두는 기본값
+export const DEFAULT_ROLE_OPTIONS = ["담임목사", "교역자", "사모", "교사", "간사"];
+/** 지금 쓰는 직함 이름 목록 (순서대로) — 목록이 아직 없으면 기본값 */
+export const roleLabels = () =>
+  state.roleOptions.length ? state.roleOptions.map((r) => r.label) : DEFAULT_ROLE_OPTIONS;
+/** 직함 이름 → 표시 순서 (모르는 직함은 맨 뒤) */
+export const roleOptionRank = (label) => {
+  const i = roleLabels().indexOf(label);
+  return i < 0 ? 99 : i;
 };
 
 export const isConfigured = () => !!(SUPABASE_URL && SUPABASE_ANON_KEY);
@@ -156,6 +168,58 @@ const supabaseAdapter = {
     await this.loadPhotoUrls();
     await this.loadTeacherPhotoUrls();
     await this.loadPendingCount();
+    await this.loadRoleOptions();
+  },
+
+  /** 직함 목록 — supabase/08_role_options.sql 을 실행하지 않은 교적부에서도 화면이 열리도록 */
+  async loadRoleOptions() {
+    const { data, error } = await sb.from("role_options").select("*").order("sort_order");
+    if (error) { state.roleOptions = []; return; }     // 아직 설치 전 — 기본값으로 동작
+    state.roleOptions = data || [];
+  },
+  async addRoleOption(label) {
+    const l = String(label || "").trim();
+    if (!l) throw new Error("직함 이름을 적어 주세요.");
+    if (roleLabels().includes(l)) throw new Error("이미 있는 직함입니다.");
+    const nextOrder = Math.max(0, ...state.roleOptions.map((r) => r.sort_order || 0)) + 1;
+    const { error } = await sb.from("role_options").insert({ label: l, sort_order: nextOrder });
+    if (error) throw new Error(translate(error.message));
+    await this.loadRoleOptions();
+  },
+  async renameRoleOption(id, newLabel) {
+    const l = String(newLabel || "").trim();
+    if (!l) throw new Error("직함 이름을 적어 주세요.");
+    const cur = state.roleOptions.find((r) => r.id === id);
+    if (!cur) throw new Error("직함을 찾을 수 없습니다.");
+    if (cur.label === l) return;
+    if (roleLabels().includes(l)) throw new Error("이미 있는 직함입니다.");
+    const { error } = await sb.from("role_options").update({ label: l }).eq("id", id);
+    if (error) throw new Error(translate(error.message));
+    // 이 직함을 쓰고 있던 분들도 새 이름으로 함께 바꿉니다
+    const { error: e2 } = await sb.from("teachers").update({ role: l }).eq("role", cur.label);
+    if (e2) throw new Error(translate(e2.message));
+    await this.loadRoleOptions();
+    await this.refresh();
+  },
+  async deleteRoleOption(id) {
+    const cur = state.roleOptions.find((r) => r.id === id);
+    if (!cur) return;
+    if (state.teachers.some((t) => t.role === cur.label))
+      throw new Error("이 직함을 쓰고 있는 분이 있어 지울 수 없습니다. 먼저 다른 직함으로 바꿔 주세요.");
+    const { error } = await sb.from("role_options").delete().eq("id", id);
+    if (error) throw new Error(translate(error.message));
+    await this.loadRoleOptions();
+  },
+  async moveRoleOption(id, dir) {
+    const list = [...state.roleOptions];
+    const i = list.findIndex((r) => r.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i].sort_order, list[j].sort_order] = [list[j].sort_order, list[i].sort_order];
+    const r1 = await sb.from("role_options").update({ sort_order: list[i].sort_order }).eq("id", list[i].id);
+    const r2 = await sb.from("role_options").update({ sort_order: list[j].sort_order }).eq("id", list[j].id);
+    if (r1.error || r2.error) throw new Error(translate((r1.error || r2.error).message));
+    await this.loadRoleOptions();
   },
 
   /** 관리자에게 «처리할 가입 신청» 개수를 보여주기 위한 값 */
@@ -397,6 +461,8 @@ const demoAdapter = {
     }
     demo.settings ||= { open: true };
     delete demo.settings.code_hash;                 // 예전 데모 데이터 정리
+    if (!demo.roleOptions?.length)
+      demo.roleOptions = DEFAULT_ROLE_OPTIONS.map((label, i) => ({ id: uid(), label, sort_order: i + 1 }));
     if (demo.session) {
       const acc = demo.accounts.find((a) => a.username === demo.session);
       state.profile = acc && acc.approved !== false ? publicProfile(acc) : null;
@@ -428,6 +494,59 @@ const demoAdapter = {
     }
     state.pendingCount = isAdmin()
       ? demo.accounts.filter((a) => a.approved === false).length : 0;
+    state.roleOptions = [...demo.roleOptions].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  },
+
+  /** demo.roleOptions 를 고친 뒤에는 늘 이걸 불러서 state.roleOptions 도 같이 맞춰 둡니다
+   *  (그렇지 않으면 화면에 반영되지 않습니다 — state 는 refresh() 때 한 번 복사해 둔 배열이라
+   *   demo.roleOptions 에 새로 밀어 넣거나 통째로 바꾼 내용은 저절로 따라가지 않습니다) */
+  _syncRoleOptions() {
+    state.roleOptions = [...demo.roleOptions].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  },
+  async addRoleOption(label) {
+    if (!state.profile?.is_admin) throw new Error("직함 관리는 관리자만 할 수 있습니다.");
+    const l = String(label || "").trim();
+    if (!l) throw new Error("직함 이름을 적어 주세요.");
+    if (roleLabels().includes(l)) throw new Error("이미 있는 직함입니다.");
+    const nextOrder = Math.max(0, ...demo.roleOptions.map((r) => r.sort_order || 0)) + 1;
+    demo.roleOptions.push({ id: uid(), label: l, sort_order: nextOrder });
+    this.persist();
+    this._syncRoleOptions();
+  },
+  async renameRoleOption(id, newLabel) {
+    if (!state.profile?.is_admin) throw new Error("직함 관리는 관리자만 할 수 있습니다.");
+    const l = String(newLabel || "").trim();
+    if (!l) throw new Error("직함 이름을 적어 주세요.");
+    const cur = demo.roleOptions.find((r) => r.id === id);
+    if (!cur) throw new Error("직함을 찾을 수 없습니다.");
+    if (cur.label === l) return;
+    if (roleLabels().includes(l)) throw new Error("이미 있는 직함입니다.");
+    const old = cur.label;
+    cur.label = l;
+    for (const t of demo.teachers) if (t.role === old) t.role = l;
+    this.persist();
+    this._syncRoleOptions();
+    await this.refresh();
+  },
+  async deleteRoleOption(id) {
+    if (!state.profile?.is_admin) throw new Error("직함 관리는 관리자만 할 수 있습니다.");
+    const cur = demo.roleOptions.find((r) => r.id === id);
+    if (!cur) return;
+    if (demo.teachers.some((t) => t.role === cur.label))
+      throw new Error("이 직함을 쓰고 있는 분이 있어 지울 수 없습니다. 먼저 다른 직함으로 바꿔 주세요.");
+    demo.roleOptions = demo.roleOptions.filter((r) => r.id !== id);
+    this.persist();
+    this._syncRoleOptions();
+  },
+  async moveRoleOption(id, dir) {
+    if (!state.profile?.is_admin) throw new Error("직함 관리는 관리자만 할 수 있습니다.");
+    const list = [...demo.roleOptions].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    const i = list.findIndex((r) => r.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i].sort_order, list[j].sort_order] = [list[j].sort_order, list[i].sort_order];
+    this.persist();
+    this._syncRoleOptions();
   },
 
   async uploadPhoto(studentId, blob) {
@@ -757,6 +876,11 @@ export const api = {
   saveMembers: (rows) => adapter.saveMany("cell_members", rows),
 
   resetDemo: () => demoAdapter.reset(),
+
+  addRoleOption: (label) => adapter.addRoleOption(label),
+  renameRoleOption: (id, label) => adapter.renameRoleOption(id, label),
+  deleteRoleOption: (id) => adapter.deleteRoleOption(id),
+  moveRoleOption: (id, dir) => adapter.moveRoleOption(id, dir),
 };
 
 // ── 파생 데이터 ──────────────────────────────────────────

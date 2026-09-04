@@ -1,13 +1,12 @@
 // ── 사진첩 — 얼굴만 크게 모아 보는 화면 (인쇄해서 붙여 두기 좋습니다) ──
 import {
-  state, isLoggedIn, photoOf, teacherPhotoOf, gradeOf, isActive, schoolYear,
+  state, isLoggedIn, photoOf, teacherPhotoOf, gradeOf, isActive, schoolYear, roleOptionRank,
 } from "../data.js";
 import { esc, avatar, byName, toast } from "../ui.js";
 import { GRADES } from "../config.js";
 import { showStudent } from "./students.js";
 import { editTeacher } from "./teachers.js";
 
-const ROLE_ORDER = ["담임목사", "교역자", "사모", "교사", "간사"];
 let tab = "students";     // 'students' | 'teachers'
 let q = "";
 
@@ -64,11 +63,11 @@ function studentGroups() {
     .filter((grp) => grp.rows.length);
 }
 
+// 교사·간사는 인원이 많지 않아 학년처럼 나누지 않고, 직함 순서로만 정렬해 한 판에 모아 보여줍니다.
 function teacherGroups() {
-  const rows = [...state.teachers].sort((a, b) => byName(a.name, b.name));
-  return ROLE_ORDER
-    .map((r) => ({ key: r, label: r, rows: rows.filter((t) => t.role === r) }))
-    .filter((grp) => grp.rows.length);
+  const rows = [...state.teachers]
+    .sort((a, b) => roleOptionRank(a.role) - roleOptionRank(b.role) || byName(a.name, b.name));
+  return rows.length ? [{ key: "__all", label: null, rows }] : [];
 }
 
 function groupsHtml(groups) {
@@ -78,16 +77,17 @@ function groupsHtml(groups) {
     if (!rows.length) return "";
     return `
     <section class="card face-section" style="margin-bottom:16px">
+      ${grp.label ? `
       <div class="card-head">
         <h3>${esc(grp.label)}</h3><span class="sub">${rows.length}명</span>
-      </div>
+      </div>` : ""}
       <div class="card-pad" style="padding-top:12px">
         <div class="face-grid face-grid-lg">
           ${rows.map((r) => `
           <button class="face" data-id="${r.id}" title="${esc(r.name)} — 눌러서 신상 보기">
             ${avatar(r.name, (tab === "students" ? photoOf(r.id) : teacherPhotoOf(r.id)), 84)}
             <span class="fname">${esc(r.name)}</span>
-            ${tab === "teachers" && r.role !== grp.label ? `<span class="fsub">${esc(r.role)}</span>` : ""}
+            ${tab === "teachers" ? `<span class="fsub">${esc(r.role)}</span>` : ""}
           </button>`).join("")}
         </div>
       </div>

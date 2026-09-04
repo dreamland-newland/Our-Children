@@ -111,10 +111,10 @@ export function toast(msg, kind = "") {
 }
 
 /** 모달 열기. body 는 HTML 문자열 또는 Element. 반환: close() */
-export function modal({ title, body, footer, narrow = false, onMount }) {
+export function modal({ title, body, footer, narrow = false, wide = false, onMount }) {
   const root = document.getElementById("modalRoot");
   const overlay = h("div", { class: "overlay" });
-  const box = h("div", { class: "modal" + (narrow ? " narrow" : "") });
+  const box = h("div", { class: "modal" + (narrow ? " narrow" : "") + (wide ? " wide" : "") });
   box.innerHTML = `
     <div class="modal-head">
       <h3>${esc(title)}</h3>

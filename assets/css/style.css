@@ -58,6 +58,14 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
+
+/* ── 야간모드 전환을 부드럽게 (맥/iOS 느낌) ──────────────────
+   버튼 같은 작은 요소는 원래 있던 빠른(.12s) 전환을 그대로 두고,
+   큰 화면 표면만 느긋하게 색이 바뀝니다. */
+body, .topbar, .card, .modal, .overlay, .footer, table.data, input, select, textarea,
+.badge, .toast {
+  transition: background-color .35s ease, color .35s ease, border-color .35s ease;
+}
 a { color: inherit; text-decoration: none; }
 h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
 :focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; border-radius: 4px; }
@@ -79,7 +87,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
 .brand-text b { font-size: 15px; letter-spacing: -.02em; }
 .brand-text small { font-size: 11px; color: var(--text-muted); }
 
-.nav { display: flex; gap: 2px; flex: 1 1 auto; }
+.nav { display: flex; align-items: center; gap: 2px; flex: 1 1 auto; }
+.nav-sep { width: 1px; height: 18px; background: var(--border-strong); margin: 0 5px; flex: none; }
 .nav a {
   padding: 7px 13px; border-radius: 999px; font-size: 14px;
   color: var(--text-secondary); font-weight: 500; white-space: nowrap;
@@ -217,6 +226,36 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
   color: var(--text-secondary); font-size: 15px; font-family: inherit;
 }
 .icon-btn:hover { background: var(--surface-2); color: var(--text-primary); }
+
+/* ── 야간모드 선택 (라이트 · 시스템 · 다크) — 맥/iOS 외모 선택기 느낌 ── */
+.theme-seg {
+  position: relative; display: inline-flex; align-items: center;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 3px; gap: 0;
+}
+.theme-seg .tseg-thumb {
+  position: absolute; top: 3px; left: 3px; width: 30px; height: 28px;
+  border-radius: 999px; background: var(--surface);
+  border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(11,11,11,.12);
+  transition: transform .32s cubic-bezier(.32, 1.25, .38, 1);
+  z-index: 0;
+}
+:root[data-theme="dark"] .theme-seg .tseg-thumb { box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .theme-seg .tseg-thumb { box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+}
+.theme-seg button {
+  position: relative; z-index: 1; width: 30px; height: 28px; display: grid; place-items: center;
+  border: 0; background: none; border-radius: 999px; cursor: pointer; padding: 0;
+  color: var(--text-muted); font-family: inherit; transition: color .2s ease;
+}
+.theme-seg button svg {
+  width: 15px; height: 15px; display: block;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.theme-seg button:hover { color: var(--text-secondary); }
+.theme-seg button.on { color: var(--text-primary); }
 
 /* ── 폼 ────────────────────────────────────────────────── */
 .field { display: grid; gap: 5px; }
@@ -461,6 +500,7 @@ table.data .num { font-variant-numeric: tabular-nums; color: var(--text-secondar
   animation: pop .16s cubic-bezier(.2,.8,.3,1);
 }
 .modal.narrow { width: min(430px, 100%); }
+.modal.wide { width: min(760px, 100%); }
 @keyframes pop { from { transform: translateY(8px) scale(.99); opacity: 0 } }
 .modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .modal-head h3 { font-size: 16px; }
@@ -482,6 +522,40 @@ a.tel { color: var(--series-1); }
   letter-spacing: .05em; margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--grid);
 }
 .section-label:first-child { margin-top: 0; }
+
+/* ── 관리자 설정 창 (맥/iOS 설정처럼 왼쪽 목록 + 오른쪽 내용) ──── */
+.settings-shell {
+  display: flex; align-items: stretch;
+  margin: -18px -20px; min-height: 420px; max-height: 74vh;
+}
+.settings-nav {
+  flex: 0 0 200px; padding: 10px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface-2); border-right: 1px solid var(--border); overflow-y: auto;
+}
+.snav-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  border: 1px solid transparent; background: none; border-radius: 9px; padding: 9px 10px;
+  font: inherit; font-size: 13.5px; font-weight: 550; color: var(--text-secondary); cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.snav-item:hover { background: color-mix(in srgb, var(--surface) 60%, transparent); }
+.snav-item.on {
+  background: var(--surface); color: var(--text-primary); font-weight: 650;
+  border-color: var(--border); box-shadow: 0 1px 2px rgba(11,11,11,.05);
+}
+.snav-ico { flex: none; font-size: 14px; width: 18px; text-align: center; }
+.snav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-pane { flex: 1; min-width: 0; padding: 18px 22px; overflow-y: auto; }
+@media (max-width: 640px) {
+  .settings-shell { flex-direction: column; max-height: none; }
+  .settings-nav {
+    flex-direction: row; width: 100%; overflow-x: auto; border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .snav-item { flex: 0 0 auto; }
+  .snav-label { white-space: nowrap; }
+  .settings-pane { padding: 16px 18px; }
+}
 
 /* ── 인증 화면 ─────────────────────────────────────────── */
 .auth-page { max-width: 430px; margin: 40px auto; }
