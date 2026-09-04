@@ -102,6 +102,9 @@ function render() {
 }
 
 window.addEventListener("hashchange", () => {
+  // 휴대폰에서 «뒤로 가기» 로 창을 닫는 게 자연스러워서, 화면을 옮기면 열린 창은 닫습니다
+  document.getElementById("modalRoot").innerHTML = "";
+  document.querySelector(".hpop")?.remove();
   syncTopButton();
   resetSignup();
   if (location.hash !== "#/cells") cells.parkDraft();

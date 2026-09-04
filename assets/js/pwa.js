@@ -46,6 +46,10 @@ export function initInstallPrompt() {
 
   // 아이폰은 알려주는 이벤트가 없어서 우리가 판단합니다
   if (isIOS() && isSafari()) setTimeout(maybeShow, DELAY);
+
+  // 안드로이드인데 «설치할 수 있어요» 이벤트가 오지 않는 브라우저
+  // (삼성 인터넷·파이어폭스 등) 에서는 메뉴로 넣는 방법을 알려 줍니다.
+  if (isAndroid()) setTimeout(() => { if (!deferred) maybeShow(); }, DELAY * 3);
 }
 
 /** 로그인 직후처럼 «자리잡은» 시점에 한 번 더 확인 */
@@ -56,7 +60,6 @@ export function nudgeInstallPrompt() {
 function maybeShow() {
   if (shown || isStandalone() || dismissed()) return;
   if (!isIOS() && !isAndroid()) return;             // PC 는 안내하지 않습니다
-  if (isAndroid() && !deferred) return;             // 설치 이벤트가 아직이면 기다립니다
   if (isIOS() && !isSafari()) return;               // 아이폰은 사파리에서만 됩니다
   shown = true;
   setTimeout(render, isLoggedIn() ? 200 : DELAY);
@@ -73,13 +76,20 @@ function render() {
   bar.id = "installBar";
   bar.className = "install-bar";
 
-  bar.innerHTML = isAndroid() ? `
+  bar.innerHTML = isAndroid() && deferred ? `
     <img class="ib-icon" src="./assets/icons/icon-192.png" alt="">
     <div class="ib-text">
       <b>앱처럼 쓰실 수 있어요</b>
       <span>홈 화면에 추가하면 주소를 찾지 않아도 바로 열립니다.</span>
     </div>
     <button class="btn btn-primary btn-sm" id="ibInstall">설치하기</button>
+    <button class="icon-btn ib-x" id="ibClose" aria-label="닫기">✕</button>`
+  : isAndroid() ? `
+    <img class="ib-icon" src="./assets/icons/icon-192.png" alt="">
+    <div class="ib-text">
+      <b>홈 화면에 추가하면 앱처럼 열려요</b>
+      <span class="ib-steps">브라우저 <b>메뉴(⋮)</b> → <b>«홈 화면에 추가»</b></span>
+    </div>
     <button class="icon-btn ib-x" id="ibClose" aria-label="닫기">✕</button>`
   : `
     <img class="ib-icon" src="./assets/icons/icon-192.png" alt="">

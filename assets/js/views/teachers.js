@@ -62,7 +62,7 @@ export function html() {
   </div>` : ""}
 
   <div class="card table-wrap">
-    <table class="data">
+    <table class="data roster r-teachers">
       <thead><tr>${headRow()}</tr></thead>
       <tbody>
         ${rows.map((t, i) => `
@@ -74,9 +74,8 @@ export function html() {
           <td><span class="badge ${t.role === "간사" ? "" : "blue"}">${esc(t.role)}</span></td>
           <td class="num">${t.birth ? esc(fmtBirth(t.birth, false))
             : t.birth_md ? esc(t.birth_md.replace("-", "월 ") + "일") : "—"}</td>
-          <td>${isLoggedIn() ? telLink(t.phone)
-            : '<span style="color:var(--text-muted)">로그인 후 표시</span>'}</td>
-          <td class="wrap" style="color:var(--text-secondary)">${isLoggedIn() ? dash(t.note) : dash(null)}</td>
+          ${isLoggedIn() ? `<td>${telLink(t.phone)}</td>
+          <td class="wrap" style="color:var(--text-secondary)">${dash(t.note)}</td>` : ""}
           <td>${t.user_id ? '<span class="badge good">가입</span>' : '<span class="badge">미가입</span>'}</td>
           ${isLoggedIn() ? `<td>
             <button class="btn btn-ghost btn-sm" data-edit="${t.id}">편집</button></td>` : ""}
@@ -184,24 +183,25 @@ function paneRoles(pane, after) {
           아직 설치되지 않았을 수 있습니다 — <b>supabase/08_role_options.sql</b> 을 한 번 실행해 주세요.
           (실행 전에는 기존 다섯 가지 직함이 그대로 쓰입니다)</div>` : ""}
       </div>
-      <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <div class="role-list">
         ${list.map((r, i) => `
-        <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;
-                    border-bottom:1px solid var(--grid)">
-          <div style="display:flex;flex-direction:column;gap:1px">
+        <div class="role-row">
+          <div class="role-move">
             <button type="button" class="btn btn-ghost btn-sm" data-up="${r.id}" ${i === 0 ? "disabled" : ""}
-              style="padding:0 6px;line-height:1.3" title="위로">▲</button>
+              title="위로">▲</button>
             <button type="button" class="btn btn-ghost btn-sm" data-down="${r.id}" ${i === list.length - 1 ? "disabled" : ""}
-              style="padding:0 6px;line-height:1.3" title="아래로">▼</button>
+              title="아래로">▼</button>
           </div>
-          <b style="flex:1;font-size:14px">${esc(r.label)}</b>
-          <span style="font-size:11.5px;color:var(--text-muted)">${usedBy(r.label)}명</span>
-          <button type="button" class="btn btn-sm" data-ren="${r.id}">이름 바꾸기</button>
-          <button type="button" class="btn btn-sm btn-danger" data-del="${r.id}">삭제</button>
+          <b class="role-name">${esc(r.label)}</b>
+          <span class="role-count">${usedBy(r.label)}명</span>
+          <div class="role-acts">
+            <button type="button" class="btn btn-sm" data-ren="${r.id}">이름 바꾸기</button>
+            <button type="button" class="btn btn-sm btn-danger" data-del="${r.id}">삭제</button>
+          </div>
         </div>`).join("") || `<div class="empty" style="padding:20px 0">직함이 없습니다.</div>`}
       </div>
-      <div style="display:flex;gap:8px;margin-top:12px">
-        <input type="text" id="newRole" placeholder="새 직함 이름 (예: 청년교사)" style="flex:1">
+      <div class="role-add">
+        <input type="text" id="newRole" placeholder="새 직함 이름 (예: 청년교사)">
         <button type="button" class="btn btn-primary btn-sm" id="addRole">추가</button>
       </div>`;
     bind();

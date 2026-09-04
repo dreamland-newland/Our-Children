@@ -431,6 +431,9 @@ function translate(msg = "") {
   if (m.includes("email address") && m.includes("invalid"))
     return "아이디 형식이 올바르지 않습니다. 영문·숫자만 사용해 주세요.";
   if (m.includes("row-level security")) return "권한이 없습니다. 로그인 상태와 관리자 권한을 확인해 주세요.";
+  if (m.includes("teachers_role_check"))
+    return "예전 설정이 남아 있어 새 직함을 쓸 수 없습니다. " +
+           "Supabase SQL Editor 에서 supabase/08_role_options.sql 을 한 번 실행해 주세요.";
   return msg;
 }
 

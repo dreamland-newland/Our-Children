@@ -132,7 +132,7 @@ function draw(root) {
 
   if (!rows.length) {
     wrap.innerHTML = `
-      <table class="data"><thead><tr>${headRow(admin)}</tr></thead></table>
+      <table class="data roster r-students"><thead><tr>${headRow(admin)}</tr></thead></table>
       <div class="empty">조건에 맞는 아이가 없습니다.
         ${anyFilter() ? `<div style="margin-top:10px">
           <button class="btn btn-sm" id="clearAll">필터 모두 지우기</button></div>` : ""}</div>`;
@@ -141,7 +141,7 @@ function draw(root) {
   }
 
   wrap.innerHTML = `
-  <table class="data">
+  <table class="data roster r-students">
     <thead><tr>${headRow(admin)}</tr></thead>
     <tbody>
       ${rows.map((s, i) => `
