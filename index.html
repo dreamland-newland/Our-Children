@@ -6,7 +6,17 @@
 <meta name="description" content="꿈땅새땅 청소년부 교적부">
 <meta name="robots" content="noindex, nofollow">
 <title>꿈땅새땅 교적부</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🌱</text></svg>">
+<link rel="icon" type="image/png" href="./assets/icons/favicon.png">
+
+<!-- 홈 화면에 추가(앱처럼 쓰기) -->
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#565CA9">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="꿈땅새땅">
+<link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
+
 <link rel="stylesheet" href="./assets/css/style.css">
 </head>
 <body>
@@ -14,14 +24,25 @@
 <header class="topbar">
   <div class="topbar-inner">
     <a class="brand" href="#/">
-      <span class="brand-mark">🌱</span>
+      <img class="brand-mark" src="./assets/icons/mark.png" alt="" width="30" height="30">
       <span class="brand-text"><b>꿈땅새땅</b><small>청소년부 교적부</small></span>
     </a>
 
     <nav class="nav" id="nav"></nav>
 
     <div class="topbar-right">
-      <button class="icon-btn" id="themeToggle" title="화면 밝기 전환" aria-label="화면 밝기 전환">◐</button>
+      <div class="theme-seg" id="themeSeg" role="group" aria-label="화면 모드">
+        <span class="tseg-thumb"></span>
+        <button type="button" data-mode="light" title="라이트 모드" aria-label="라이트 모드">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.4v2.2M12 19.4v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.4 12h2.2M19.4 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg>
+        </button>
+        <button type="button" data-mode="system" title="시스템 설정을 따름" aria-label="시스템 설정을 따름">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.6" y="4" width="18.8" height="13" rx="2.4"/><path d="M8.6 21h6.8M12 17v4"/></svg>
+        </button>
+        <button type="button" data-mode="dark" title="다크 모드" aria-label="다크 모드">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.3A8.2 8.2 0 0 1 9.7 3.5a8.4 8.4 0 1 0 10.8 10.8Z"/></svg>
+        </button>
+      </div>
       <div id="authSlot" class="auth-slot"></div>
     </div>
   </div>
