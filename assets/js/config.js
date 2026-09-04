@@ -18,8 +18,8 @@
 //  가짜 샘플 데이터를 그대로 둘러볼 수 있고, 변경사항은 이 브라우저에만 저장됩니다.
 // ============================================================
 
-export const SUPABASE_URL      = "sb_publishable_Vo_TjiC-87LEJDCol_T-Sg_OgC8Ktc5";
-export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkbXN0dXpzdXpmdmtyYnRueWRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2OTMyNzQsImV4cCI6MjEwMjI2OTI3NH0.cjX3mcGtWJUQpjloDrSB3ZxlmA974yGJnSxT9Ua-3B8";
+export const SUPABASE_URL      = "https://bdmstuzsuzfvkrbtnydc.supabase.co";
+export const SUPABASE_ANON_KEY = "sb_publishable_Vo_TjiC-87LEJDCol_T-Sg_OgC8Ktc5";
 
 // ── 그 외 설정 ────────────────────────────────────────────
 export const GROUP_NAME = "꿈땅새땅";
