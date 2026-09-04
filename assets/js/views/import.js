@@ -7,7 +7,7 @@
 import {
   state, api, isLoggedIn, currentVersion, cellIdOf, cellNameOf, cellRoleOf, uid, autoGrade, gradeOf,
 } from "../data.js";
-import { esc, toast, digits, modal, confirmDialog, byName, resizeImage } from "../ui.js";
+import { esc, toast, digits, modal, confirmDialog, byName, fitImage } from "../ui.js";
 import { GRADES, DEFAULT_TERM_LABEL } from "../config.js";
 import { loadXLSX } from "../xlsx.js";
 
@@ -760,7 +760,8 @@ function drawPhotoResult(root, rerender) {
     <div class="modal-foot" style="border:1px solid var(--border);border-top:none;
          border-radius:0 0 8px 8px;padding:12px 14px">
       <span style="margin-right:auto;font-size:12.5px;color:var(--text-muted)">
-        선택한 사진만 올라갑니다. 이미 사진이 있는 사람은 <b>새 사진으로 바뀝니다.</b></span>
+        선택한 사진만 올라갑니다. 이미 사진이 있는 사람은 <b>새 사진으로 바뀝니다.</b>
+        얼굴이 치우쳐 보이면 주소록·교사간사 편집 창에서 <b>«✂️ 다시 자르기»</b> 로 맞추시면 됩니다.</span>
       <button class="btn btn-primary" id="applyPhotos" ${matched ? "" : "disabled"}>${matched}장 올리기</button>
     </div>`;
 
@@ -791,9 +792,11 @@ async function applyPhotos(root, rerender) {
   for (let i = 0; i < todo.length; i++) {
     if (btn) btn.textContent = `올리는 중… (${i + 1}/${todo.length})`;
     try {
-      const cropped = await resizeImage(todo[i].blob, 400, 0.85);
-      if (photoAsTeacher) await api.uploadTeacherPhoto(todo[i].chosenId, cropped);
-      else await api.uploadPhoto(todo[i].chosenId, cropped);
+      // 자르지 않고 «통째로» 올립니다 — 동그란 사진에는 가운데가 보이고,
+      // 나중에 주소록·교사간사 편집 창의 «다시 자르기» 로 원하는 부분을 고를 수 있습니다.
+      const shrunk = await fitImage(todo[i].blob, 900, 0.85);
+      if (photoAsTeacher) await api.uploadTeacherPhoto(todo[i].chosenId, shrunk);
+      else await api.uploadPhoto(todo[i].chosenId, shrunk);
       ok++;
     } catch (e) { console.error(e); fail++; }
   }

@@ -211,30 +211,76 @@ export function resizeImage(file, size = 400, quality = 0.85) {
     img.src = url;
   });
 }
+/** 사진을 «자르지 않고» 크기만 줄입니다 (긴 쪽이 max 픽셀).
+ *  엑셀로 한꺼번에 올릴 때 씁니다 — 원본이 통째로 남아 있어야
+ *  나중에 «사진 다시 자르기» 로 원하는 부분을 다시 고를 수 있습니다. */
+export function fitImage(file, max = 900, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    if (!/^image\//.test(file.type)) return reject(new Error("이미지 파일만 올릴 수 있습니다."));
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const cv = document.createElement("canvas");
+      cv.width = Math.max(1, Math.round(img.width * scale));
+      cv.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = cv.getContext("2d");
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      cv.toBlob((blob) => blob ? resolve(blob) : reject(new Error("이미지를 처리하지 못했습니다.")),
+                "image/jpeg", quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("이미지를 열지 못했습니다.")); };
+    img.src = url;
+  });
+}
+
+/** 이미 올려 둔 사진을 다시 열어 «자르기» 창을 띄웁니다.
+ *  · src 는 사진 주소(문자열)나 아직 저장 전인 사진(Blob) 둘 다 됩니다.
+ *  · 새로 파일을 고르지 않고도 위치·크기만 다시 맞출 수 있습니다.
+ *  · 취소하면 null 을 돌려줍니다. */
+export async function recropStoredPhoto(src) {
+  if (!src) throw new Error("아직 사진이 없습니다.");
+  let blob = src;
+  if (typeof src === "string") {
+    try {
+      const res = await fetch(src);
+      if (!res.ok) throw new Error(String(res.status));
+      blob = await res.blob();
+    } catch {
+      throw new Error("올려 둔 사진을 불러오지 못했습니다. 잠시 뒤 다시 해보시거나 사진을 새로 올려 주세요.");
+    }
+  }
+  if (!/^image\//.test(blob.type)) blob = new Blob([blob], { type: "image/jpeg" });
+  return cropImage(blob);
+}
+
 /** 사진에서 쓸 부분을 네모로 잘라내는 창.
  *  · 사진 전체가 보이고, 그 위에 «자를 네모» 가 얹힙니다.
  *  · 네모 안을 끌면 위치가, 네 귀퉁이를 끌면 크기가 바뀝니다 (정사각형 유지).
+ *  · 옆으로 누운 사진은 «↺ ↻ 90°» 로 돌려서 세울 수 있습니다.
  *  · «적용» 을 누르면 그 부분만 잘린 JPEG 한 장이 나옵니다. 취소하면 null.
  */
 export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
   if (!/^image\//.test(file.type)) throw new Error("이미지 파일만 올릴 수 있습니다.");
-  const src = await loadUpright(file);          // 휴대폰 사진 회전 먼저 반영
+  let src = await loadUpright(file);             // 휴대폰 사진 회전 먼저 반영
+  const releaseOriginal = src.release;           // 창을 닫을 때 원본 비트맵을 놓아 줍니다
 
   return new Promise((resolve) => {
     // 사진 전체가 들어가도록 축소해서 보여 줍니다
     const MAX = Math.min(320, Math.max(240, Math.round(window.innerWidth * 0.72)));
-    const scale = Math.min(MAX / src.width, MAX / src.height, 1);
-    const dw = Math.round(src.width * scale), dh = Math.round(src.height * scale);
+    let scale = 1, dw = 0, dh = 0;
     const MIN = 44;                              // 자를 네모의 최소 크기
-    let fs = Math.round(Math.min(dw, dh) * 0.85);   // frame size
-    let fx = Math.round((dw - fs) / 2), fy = Math.round((dh - fs) / 2);
+    let fs = 0;                                  // frame size
+    let fx = 0, fy = 0;
     let done = false;
 
     const wrap = document.createElement("div");
     wrap.innerHTML = `
       <div class="crop-stage">
-        <div class="crop-area" id="cropArea" style="width:${dw}px;height:${dh}px">
-          <img id="cropImg" alt="" draggable="false" style="width:${dw}px;height:${dh}px">
+        <div class="crop-area" id="cropArea">
+          <img id="cropImg" alt="" draggable="false">
           <div class="crop-dim" id="cropDim"></div>
           <div class="crop-frame" id="cropFrame">
             <i class="hd nw" data-h="nw"></i><i class="hd ne" data-h="ne"></i>
@@ -244,9 +290,11 @@ export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
       </div>
       <div class="form-note" style="margin-top:12px">
         네모 <b>안쪽을 끌면</b> 위치가, <b>귀퉁이를 끌면</b> 크기가 바뀝니다.
-        네모 안이 프로필 사진이 됩니다.
+        네모 안이 프로필 사진이 됩니다. 사진이 누워 있으면 <b>돌리기</b>로 세워 주세요.
       </div>
       <div class="crop-tools">
+        <button type="button" class="btn btn-sm" id="rotL" title="왼쪽으로 90° 돌리기">↺ 왼쪽</button>
+        <button type="button" class="btn btn-sm" id="rotR" title="오른쪽으로 90° 돌리기">↻ 오른쪽</button>
         <button type="button" class="btn btn-sm" id="cropAll">전체</button>
         <button type="button" class="btn btn-sm" id="cropSquare">가운데 정사각형</button>
       </div>`;
@@ -255,7 +303,39 @@ export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
     const frame = wrap.querySelector("#cropFrame");
     const dim = wrap.querySelector("#cropDim");
     const area = wrap.querySelector("#cropArea");
-    imgEl.src = src.url;
+
+    /** 지금 사진 크기에 맞춰 화면을 다시 잡고, 자를 네모를 가운데로 되돌립니다 */
+    const layout = () => {
+      scale = Math.min(MAX / src.width, MAX / src.height, 1);
+      dw = Math.round(src.width * scale);
+      dh = Math.round(src.height * scale);
+      area.style.width = `${dw}px`;
+      area.style.height = `${dh}px`;
+      imgEl.style.width = `${dw}px`;
+      imgEl.style.height = `${dh}px`;
+      imgEl.src = src.url;
+      fs = Math.round(Math.min(dw, dh) * 0.85);
+      fx = Math.round((dw - fs) / 2);
+      fy = Math.round((dh - fs) / 2);
+      draw();
+    };
+
+    /** 90° 돌리기 — dir 이 -1이면 왼쪽, +1이면 오른쪽 */
+    const rotate = (dir) => {
+      const cv = document.createElement("canvas");
+      cv.width = src.height;
+      cv.height = src.width;
+      const c = cv.getContext("2d");
+      c.imageSmoothingQuality = "high";
+      c.translate(cv.width / 2, cv.height / 2);
+      c.rotate((dir * Math.PI) / 2);
+      c.drawImage(src.bitmap, -src.width / 2, -src.height / 2, src.width, src.height);
+      src = {
+        width: cv.width, height: cv.height, bitmap: cv,
+        url: cv.toDataURL("image/jpeg", 0.92),
+      };
+      layout();
+    };
 
     const draw = () => {
       fs = Math.max(MIN, Math.min(fs, dw, dh));
@@ -268,7 +348,7 @@ export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
         ` ${fx}px ${fy}px, ${fx}px ${fy + fs}px,` +
         ` ${fx + fs}px ${fy + fs}px, ${fx + fs}px ${fy}px, ${fx}px ${fy}px)`;
     };
-    draw();
+    layout();
 
     // ── 끌기 (안쪽=이동, 귀퉁이=크기) ──
     let mode = null, st = null;
@@ -305,6 +385,8 @@ export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
     area.addEventListener("pointerup", end);
     area.addEventListener("pointercancel", end);
 
+    wrap.querySelector("#rotL").addEventListener("click", () => rotate(-1));
+    wrap.querySelector("#rotR").addEventListener("click", () => rotate(1));
     wrap.querySelector("#cropAll").addEventListener("click", () => {
       fs = Math.min(dw, dh); fx = (dw - fs) / 2; fy = (dh - fs) / 2; draw();
     });
@@ -324,7 +406,7 @@ export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
           ctx.imageSmoothingQuality = "high";
           ctx.drawImage(src.bitmap, fx / scale, fy / scale, fs / scale, fs / scale, 0, 0, size, size);
           cv.toBlob((blob) => {
-            done = true; src.release(); close(); resolve(blob || null);
+            done = true; releaseOriginal?.(); close(); resolve(blob || null);
           }, "image/jpeg", quality);
         });
       },
@@ -333,7 +415,7 @@ export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
     const watch = setInterval(() => {          // 취소로 닫혔을 때
       if (document.body.contains(wrap)) return;
       clearInterval(watch);
-      if (!done) { src.release(); resolve(null); }
+      if (!done) { releaseOriginal?.(); resolve(null); }
     }, 200);
   });
 }

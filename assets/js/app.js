@@ -54,7 +54,8 @@ function syncThemeSeg() {
   if (thumb) thumb.style.transform = `translateX(${i * 30}px)`;
 }
 applyThemeMode(currentThemeMode());
-document.getElementById("themeSeg").addEventListener("click", (e) => {
+// index.html 이 아직 예전 것이어도(버튼이 없어도) 앱 전체가 멈추지 않도록 «?.» 로 둡니다
+document.getElementById("themeSeg")?.addEventListener("click", (e) => {
   const b = e.target.closest("button[data-mode]");
   if (b) applyThemeMode(b.dataset.mode);
 });

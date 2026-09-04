@@ -537,10 +537,14 @@ export function editTeacher(t, after) {
       <div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button type="button" class="btn btn-sm" id="pickPhoto">사진 올리기</button>
-          ${teacherPhotoOf(t.id) ? `<button type="button" class="btn btn-sm btn-danger" id="dropPhoto">사진 지우기</button>` : ""}
+          ${teacherPhotoOf(t.id) ? `<button type="button" class="btn btn-sm" id="recropPhoto">✂️ 다시 자르기</button>
+          <button type="button" class="btn btn-sm btn-danger" id="dropPhoto">사진 지우기</button>` : ""}
         </div>
         <div class="hintbox" style="margin-top:6px">
-          사진을 고르면 <b>위치와 크기를 맞추는 창</b>이 열립니다.<br>
+          ${teacherPhotoOf(t.id)
+            ? `<b>다시 자르기</b>는 지금 올라가 있는 사진을 그대로 다시 열어 줍니다 —
+               <b>파일을 새로 고르지 않아도</b> 위치와 크기만 고칠 수 있습니다.<br>`
+            : "사진을 고르면 <b>위치와 크기를 맞추는 창</b>이 열립니다.<br>"}
           사진은 <b>로그인한 교사진에게만</b> 보입니다.
         </div>
       </div>
@@ -583,22 +587,41 @@ export function editTeacher(t, after) {
 
       const fileEl = box.querySelector("#photoFile");
       const boxEl = box.querySelector("#photoBox");
+
+      /** 자르기 창에서 나온 사진을 «저장 대기» 로 걸어 두고 미리보기를 바꿔 줍니다 */
+      const showPending = async (blob) => {
+        pendingPhoto = blob;
+        removePhoto = false;
+        boxEl.querySelector(".ava")?.replaceWith(
+          Object.assign(document.createElement("span"), {
+            className: "ava",
+            style: "width:76px;height:76px",
+            innerHTML: `<img src="${await blobToDataURL(blob)}" alt="">`,
+          }));
+        toast("저장을 누르면 반영됩니다.");
+      };
+
       box.querySelector("#pickPhoto")?.addEventListener("click", () => fileEl.click());
       fileEl?.addEventListener("change", async () => {
         const f = fileEl.files?.[0];
         if (!f) return;
         try {
-          pendingPhoto = await cropImage(f);
-          if (!pendingPhoto) { fileEl.value = ""; return; }
-          removePhoto = false;
-          boxEl.querySelector(".ava")?.replaceWith(
-            Object.assign(document.createElement("span"), {
-              className: "ava",
-              style: "width:76px;height:76px",
-              innerHTML: `<img src="${await blobToDataURL(pendingPhoto)}" alt="">`,
-            }));
-          toast("저장을 누르면 반영됩니다.");
+          const cropped = await cropImage(f);
+          if (!cropped) { fileEl.value = ""; return; }
+          await showPending(cropped);
         } catch (err) { toast(err.message, "err"); }
+      });
+
+      // 이미 올려 둔 사진을 새로 고르지 않고 다시 자르기
+      box.querySelector("#recropPhoto")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          const { recropStoredPhoto } = await import("../ui.js");
+          const cropped = await recropStoredPhoto(pendingPhoto || teacherPhotoOf(t.id));
+          if (cropped) await showPending(cropped);
+        } catch (err) { toast(err.message, "err"); }
+        finally { btn.disabled = false; }
       });
       box.querySelector("#dropPhoto")?.addEventListener("click", () => {
         removePhoto = true; pendingPhoto = null;
