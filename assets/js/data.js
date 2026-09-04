@@ -74,6 +74,10 @@ export const isActive = (s) => { const st = statusOf(s); return st === "재적" 
 export const photoUrls = new Map();
 export const photoOf = (studentId) => photoUrls.get(studentId) || null;
 export const PHOTO_BUCKET = "student-photos";
+/** 교사·간사 id → 볼 수 있는 사진 주소 (학생과 같은 방식, 버킷만 따로) */
+export const teacherPhotoUrls = new Map();
+export const teacherPhotoOf = (teacherId) => teacherPhotoUrls.get(teacherId) || null;
+export const TEACHER_PHOTO_BUCKET = "teacher-photos";
 /** 프라이버시 모드에서 비로그인 방문자에게 학생 민감정보를 가리는 중인가 */
 export const isMasked = () => PUBLIC_SCOPE === "basic" && !isLoggedIn();
 export const isLoggedIn = () => !!state.profile;
@@ -150,6 +154,7 @@ const supabaseAdapter = {
     state.teachers = t.data; state.students = s.data;
     ensureVersion();
     await this.loadPhotoUrls();
+    await this.loadTeacherPhotoUrls();
     await this.loadPendingCount();
   },
 
@@ -191,6 +196,37 @@ const supabaseAdapter = {
     const { error } = await sb.from("students").update({ photo_path: null }).eq("id", studentId);
     if (error) throw new Error(translate(error.message));
     if (old) await sb.storage.from(PHOTO_BUCKET).remove([old]);
+  },
+
+  /** 비공개 버킷이라 로그인한 교사진에게만 잠깐 유효한 링크를 발급합니다. (교사·간사) */
+  async loadTeacherPhotoUrls() {
+    teacherPhotoUrls.clear();
+    if (!isLoggedIn()) return;
+    const rows = state.teachers.filter((t) => t.photo_path);
+    if (!rows.length) return;
+    const { data, error } = await sb.storage.from(TEACHER_PHOTO_BUCKET)
+      .createSignedUrls(rows.map((t) => t.photo_path), 60 * 60);
+    if (error) return;
+    data.forEach((d, i) => { if (d.signedUrl) teacherPhotoUrls.set(rows[i].id, d.signedUrl); });
+  },
+
+  async uploadTeacherPhoto(teacherId, blob) {
+    const path = `${teacherId}/${Date.now()}.jpg`;
+    const up = await sb.storage.from(TEACHER_PHOTO_BUCKET)
+      .upload(path, blob, { contentType: "image/jpeg", upsert: true });
+    if (up.error) throw new Error(translate(up.error.message));
+    const old = state.teachers.find((t) => t.id === teacherId)?.photo_path;
+    const { error } = await sb.from("teachers").update({ photo_path: path }).eq("id", teacherId);
+    if (error) throw new Error(translate(error.message));
+    if (old && old !== path) await sb.storage.from(TEACHER_PHOTO_BUCKET).remove([old]);
+    return path;
+  },
+
+  async removeTeacherPhoto(teacherId) {
+    const old = state.teachers.find((t) => t.id === teacherId)?.photo_path;
+    const { error } = await sb.from("teachers").update({ photo_path: null }).eq("id", teacherId);
+    if (error) throw new Error(translate(error.message));
+    if (old) await sb.storage.from(TEACHER_PHOTO_BUCKET).remove([old]);
   },
 
   async listAccounts() {
@@ -383,9 +419,13 @@ const demoAdapter = {
                                   address: null, note: null } : s));
     ensureVersion();
     photoUrls.clear();
+    teacherPhotoUrls.clear();
     demo.photos ||= {};
-    if (isLoggedIn())                                 // 사진은 로그인해야 보입니다
+    demo.teacherPhotos ||= {};
+    if (isLoggedIn()) {                               // 사진은 로그인해야 보입니다
       for (const [sid, url] of Object.entries(demo.photos)) photoUrls.set(sid, url);
+      for (const [tid, url] of Object.entries(demo.teacherPhotos)) teacherPhotoUrls.set(tid, url);
+    }
     state.pendingCount = isAdmin()
       ? demo.accounts.filter((a) => a.approved === false).length : 0;
   },
@@ -408,6 +448,27 @@ const demoAdapter = {
     delete demo.photos[studentId];
     const st = demo.students.find((s) => s.id === studentId);
     if (st) st.photo_path = null;
+    this.persist();
+  },
+
+  async uploadTeacherPhoto(teacherId, blob) {
+    if (!state.profile) throw new Error("로그인이 필요합니다.");
+    const { blobToDataURL } = await import("./ui.js");
+    demo.teacherPhotos ||= {};
+    demo.teacherPhotos[teacherId] = await blobToDataURL(blob);
+    const t = demo.teachers.find((x) => x.id === teacherId);
+    if (t) t.photo_path = `demo/${teacherId}`;
+    try { this.persist(); }
+    catch { delete demo.teacherPhotos[teacherId]; throw new Error("브라우저 저장 공간이 가득 찼습니다. 데모 모드에서는 사진을 몇 장만 넣을 수 있어요."); }
+    return t?.photo_path;
+  },
+
+  async removeTeacherPhoto(teacherId) {
+    if (!state.profile) throw new Error("로그인이 필요합니다.");
+    demo.teacherPhotos ||= {};
+    delete demo.teacherPhotos[teacherId];
+    const t = demo.teachers.find((x) => x.id === teacherId);
+    if (t) t.photo_path = null;
     this.persist();
   },
 
@@ -678,6 +739,8 @@ export const api = {
   saveStudents: (rows) => adapter.saveMany("students", rows),
   deleteStudent: (id) => adapter.remove("students", id),
 
+  uploadTeacherPhoto: (id, blob) => adapter.uploadTeacherPhoto(id, blob),
+  removeTeacherPhoto: (id) => adapter.removeTeacherPhoto(id),
   saveTeacher: (r) => adapter.save("teachers", r),
   saveTeachers: (rows) => adapter.saveMany("teachers", rows),
   deleteTeacher: (id) => adapter.remove("teachers", id),

@@ -4,7 +4,7 @@
 // ============================================================
 import {
   state, api, isLoggedIn, isAdmin, versionCells, currentVersion,
-  versionLabel, cellMembers, cellIdOf, photoOf, uid, gradeOf, gradeWithYear, statusOf, isActive, isGraduated,
+  versionLabel, cellMembers, cellIdOf, photoOf, uid, gradeOf, gradeWithYear, statusOf, isActive,
   cellRoleOf, roleRank,
 } from "../data.js";
 import { esc, modal, toast, confirmDialog, avatar, showSkyBadge } from "../ui.js";
@@ -247,9 +247,9 @@ function resumeDraft() {
 
 const ORDER = ["예비중1", "중1", "중2", "중3", "고1", "고2", "고3"];
 const gradeRank = (g) => { const i = ORDER.indexOf(g); return i < 0 ? 99 : i; };
-/** 최신 편성에서는 졸업생을 감추고, 지난 편성에서는 기록 그대로 보여줍니다. */
+/** 최신 편성에서는 졸업생·전출생을 감추고, 지난 편성에서는 기록 그대로 보여줍니다. */
 const visibleMembers = (cellId, isLatest) =>
-  cellMembers(cellId).filter((s) => (isLatest ? !isGraduated(s) : true));
+  cellMembers(cellId).filter((s) => (isLatest ? isActive(s) : true));
 // ── 편성할 때 도움이 되는 정보들 ──────────────────────────
 /** 만 나이 (생년월일을 모르고 연도만 있으면 그 해 기준 어림값) */
 function ageOf(st) {
@@ -354,7 +354,7 @@ function startDraft() {
 }
 export const isEditing = () => !!draft;
 const dCells = () => [...draft.cells].sort((a, b) => a.sort_order - b.sort_order);
-const dMembers = (key) => state.students.filter((s) => draft.assign[s.id] === key && !isGraduated(s));
+const dMembers = (key) => state.students.filter((s) => draft.assign[s.id] === key && isActive(s));
 const dCellOf = (sid) => draft.assign[sid] || null;
 
 // ════════════════════════════════════════════════════════════
@@ -397,7 +397,7 @@ export function html() {
   const cells = versionCells(v.id);
   const assigned = state.members.filter((m) => m.version_id === v.id)
     .filter((m) => { const s = state.students.find((x) => x.id === m.student_id);
-                     return s && (state.versions[0]?.id !== v.id || !isGraduated(s)); }).length;
+                     return s && (state.versions[0]?.id !== v.id || isActive(s)); }).length;
   const isLatest = state.versions[0]?.id === v.id;
   const unassigned = state.students.filter((s) => isActive(s) && !cellIdOf(s.id, v.id));
   const edited = v.updated_at && v.updated_at !== v.created_at;
@@ -1141,7 +1141,7 @@ function editSeats(cellKey, after) {
 
 function addMembers(cellKey, after) {
   const assigned = new Set(Object.entries(draft.assign).filter(([, k]) => k).map(([s]) => s));
-  const pool = state.students.filter((s) => !assigned.has(s.id) && !isGraduated(s))
+  const pool = state.students.filter((s) => !assigned.has(s.id) && isActive(s))
     .sort((a, b) => gradeRank(gradeOf(a)) - gradeRank(gradeOf(b)) || a.name.localeCompare(b.name, "ko"));
   const box = document.createElement("div");
   box.innerHTML = pool.length ? `

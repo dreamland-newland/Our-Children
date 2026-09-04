@@ -133,7 +133,7 @@ export function overviewView() {
       <section class="card">
         <div class="card-head"><h3>교사 · 간사</h3><span class="sub">${teacherCount}명</span></div>
         <div class="chart">
-          ${barChart(["교역자", "사모", "교사", "간사"]
+          ${barChart(["담임목사", "교역자", "사모", "교사", "간사"]
             .map((r) => ({ label: r, value: state.teachers.filter((t) => t.role === r).length }))
             .filter((r) => r.value), { alt: true })}
           <p style="margin:12px 0 0;font-size:12.5px;color:var(--text-secondary)">

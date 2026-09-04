@@ -1,12 +1,44 @@
 // ── 교사 / 간사 연락처 ─────────────────────────────────────
-import { state, api, isLoggedIn, isAdmin } from "../data.js";
-import { esc, dash, telLink, fmtBirth, modal, toast, confirmDialog, avatar } from "../ui.js";
+import { state, api, isLoggedIn, isAdmin, teacherPhotoOf } from "../data.js";
+import {
+  esc, dash, telLink, fmtBirth, modal, toast, confirmDialog, avatar, byName, cropImage, blobToDataURL,
+} from "../ui.js";
 import { bindDownload as bindXlsx } from "../xlsx.js";
 
-const ROLES = ["교역자", "사모", "교사", "간사"];
+const ROLES = ["담임목사", "교역자", "사모", "교사", "간사"];
+const ROLE_RANK = (r) => { const i = ROLES.indexOf(r); return i < 0 ? 99 : i; };
+
+// 정렬 상태 — 칸 머리를 눌러 마음대로 바꿀 수 있습니다
+const f = { sort: "seq", dir: 1 };
+
+const COLS = [
+  { key: "seq",   label: "#" },
+  { key: "name",  label: "이름" },
+  { key: "role",  label: "구분" },
+  { key: "birth", label: "생년월일" },
+  { key: "phone", label: "전화번호", masked: true },
+  { key: "note",  label: "비고",     masked: true },
+  { key: "user",  label: "계정" },
+];
+
+function sortedRows() {
+  const rows = [...state.teachers];
+  const key = f.sort;
+  rows.sort((a, b) => {
+    let x, y;
+    if (key === "role") { x = ROLE_RANK(a.role); y = ROLE_RANK(b.role); }
+    else if (key === "user") { x = a.user_id ? 1 : 0; y = b.user_id ? 1 : 0; }
+    else if (key === "name") { return byName(a.name, b.name) * f.dir; }
+    else { x = a[key]; y = b[key]; }
+    if (x === null || x === undefined || x === "") return 1;
+    if (y === null || y === undefined || y === "") return -1;
+    return (typeof x === "number" ? x - y : byName(String(x), String(y))) * f.dir;
+  });
+  return rows;
+}
 
 export function html() {
-  const rows = [...state.teachers].sort((a, b) => (a.seq || 0) - (b.seq || 0));
+  const rows = sortedRows();
   const claimed = rows.filter((t) => t.user_id).length;
 
   return `
@@ -36,15 +68,14 @@ export function html() {
 
   <div class="card table-wrap">
     <table class="data">
-      <thead><tr>
-        <th>#</th><th>이름</th><th>구분</th><th>생년월일</th><th>전화번호</th>
-        <th>비고</th><th>계정</th>${isLoggedIn() ? "<th></th>" : ""}
-      </tr></thead>
+      <thead><tr>${headRow()}</tr></thead>
       <tbody>
         ${rows.map((t) => `
         <tr data-id="${t.id}">
           <td class="num">${t.seq ?? ""}</td>
-          <td><b>${esc(t.name)}</b></td>
+          <td><span style="display:inline-flex;align-items:center;gap:8px">
+              ${avatar(t.name, teacherPhotoOf(t.id), 26)}
+              <b>${esc(t.name)}</b></span></td>
           <td><span class="badge ${t.role === "간사" ? "" : "blue"}">${esc(t.role)}</span></td>
           <td class="num">${t.birth ? esc(fmtBirth(t.birth, false))
             : t.birth_md ? esc(t.birth_md.replace("-", "월 ") + "일") : "—"}</td>
@@ -67,6 +98,18 @@ export function html() {
   </div>`;
 }
 
+/** 표 머리 — 눌러서 정렬을 마음대로 바꿉니다 */
+function headRow() {
+  return COLS.filter((c) => !(c.masked && !isLoggedIn())).map((c) => {
+    const sorted = f.sort === c.key;
+    return `
+    <th class="hcol">
+      <button class="hsort${sorted ? " on" : ""}" data-sort="${c.key}"
+        title="이 칸으로 정렬">${esc(c.label)}${sorted ? (f.dir > 0 ? " ↑" : " ↓") : ""}</button>
+    </th>`;
+  }).join("") + (isLoggedIn() ? "<th></th>" : "");
+}
+
 export function mount(root, rerender) {
   root.querySelector("#accounts")?.addEventListener("click", () => accountPanel(rerender));
   root.querySelector("#accounts2")?.addEventListener("click", () => accountPanel(rerender));
@@ -75,6 +118,11 @@ export function mount(root, rerender) {
   root.querySelector("#addBtn")?.addEventListener("click", () => editTeacher(null, rerender));
   root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () =>
     editTeacher(state.teachers.find((t) => t.id === b.dataset.edit), rerender)));
+  root.querySelectorAll("[data-sort]").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.sort;
+    if (f.sort === k) f.dir *= -1; else { f.sort = k; f.dir = 1; }
+    rerender();
+  }));
   bindXlsx(root.querySelector("#xlsxBtn"), async () => {
     const { exportTeachers } = await import("../xlsx.js");
     await exportTeachers({ masked: !isLoggedIn() });
@@ -371,12 +419,31 @@ async function signupSettings(after) {
   });
 }
 
-function editTeacher(t, after) {
+export function editTeacher(t, after) {
   const isNew = !t?.id;
   t = t || {};
   const form = document.createElement("form");
   form.id = "tForm";
+  let pendingPhoto = null;      // 저장을 눌러야 실제로 올라갑니다
+  let removePhoto = false;
   form.innerHTML = `
+    ${isNew ? "" : `
+    <div class="photo-edit" style="margin-bottom:18px">
+      <label class="photo-drop" title="사진 바꾸기" id="photoBox">
+        ${avatar(t.name, teacherPhotoOf(t.id), 76)}
+        <input type="file" accept="image/*" id="photoFile" style="display:none">
+      </label>
+      <div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn btn-sm" id="pickPhoto">사진 올리기</button>
+          ${teacherPhotoOf(t.id) ? `<button type="button" class="btn btn-sm btn-danger" id="dropPhoto">사진 지우기</button>` : ""}
+        </div>
+        <div class="hintbox" style="margin-top:6px">
+          사진을 고르면 <b>위치와 크기를 맞추는 창</b>이 열립니다.<br>
+          사진은 <b>로그인한 교사진에게만</b> 보입니다.
+        </div>
+      </div>
+    </div>`}
     <div class="grid grid-2">
       <div class="field"><label>이름</label>
         <input type="text" name="name" required value="${esc(t.name)}"></div>
@@ -412,6 +479,32 @@ function editTeacher(t, after) {
         try { await api.deleteTeacher(t.id); await api.refresh(); close(); after?.(); toast("삭제했습니다."); }
         catch (e) { toast(e.message, "err"); }
       });
+
+      const fileEl = box.querySelector("#photoFile");
+      const boxEl = box.querySelector("#photoBox");
+      box.querySelector("#pickPhoto")?.addEventListener("click", () => fileEl.click());
+      fileEl?.addEventListener("change", async () => {
+        const f = fileEl.files?.[0];
+        if (!f) return;
+        try {
+          pendingPhoto = await cropImage(f);
+          if (!pendingPhoto) { fileEl.value = ""; return; }
+          removePhoto = false;
+          boxEl.querySelector(".ava")?.replaceWith(
+            Object.assign(document.createElement("span"), {
+              className: "ava",
+              style: "width:76px;height:76px",
+              innerHTML: `<img src="${await blobToDataURL(pendingPhoto)}" alt="">`,
+            }));
+          toast("저장을 누르면 반영됩니다.");
+        } catch (err) { toast(err.message, "err"); }
+      });
+      box.querySelector("#dropPhoto")?.addEventListener("click", () => {
+        removePhoto = true; pendingPhoto = null;
+        boxEl.innerHTML = avatar(t.name, null, 76) + boxEl.querySelector("input").outerHTML;
+        toast("저장을 누르면 사진이 지워집니다.");
+      });
+
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         const fd = Object.fromEntries(new FormData(form).entries());
@@ -419,8 +512,14 @@ function editTeacher(t, after) {
         for (const k of Object.keys(row)) if (row[k] === "") row[k] = null;
         if (!isNew) { row.id = t.id; row.seq = t.seq; }
         else row.seq = Math.max(0, ...state.teachers.map((x) => x.seq || 0)) + 1;
-        try { await api.saveTeacher(row); await api.refresh(); close(); after?.(); toast("저장했습니다."); }
-        catch (err) { toast(err.message, "err"); }
+        try {
+          const saved = await api.saveTeacher(row);
+          if (pendingPhoto) await api.uploadTeacherPhoto(saved?.id || t.id, pendingPhoto);
+          else if (removePhoto) await api.removeTeacherPhoto(t.id);
+          await api.refresh();
+          close(); after?.();
+          toast(isNew ? "등록했습니다." : "저장했습니다.");
+        } catch (err) { toast(err.message, "err"); }
       });
     },
   });

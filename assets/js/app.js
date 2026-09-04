@@ -8,9 +8,11 @@ import * as students from "./views/students.js";
 import * as cells from "./views/cells.js";
 import * as birthdays from "./views/birthdays.js";
 import * as promoted from "./views/promoted.js";
+import * as photos from "./views/photos.js";
 import * as teachers from "./views/teachers.js";
 import * as importer from "./views/import.js";
 import { login, signup, resetSignup } from "./views/auth.js";
+import { initInstallPrompt, nudgeInstallPrompt } from "./pwa.js";
 
 const ROUTES = {
   "/":          { title: "개요",       nav: "개요",      view: { html: overview.overviewView, mount: overview.mount } },
@@ -18,6 +20,7 @@ const ROUTES = {
   "/cells":     { title: "셀편성",     nav: "셀편성",    view: cells },
   "/birthdays": { title: "생일",       nav: "생일",      view: birthdays },
   "/promoted":  { title: "올해 중1",   nav: "올해 중1",  view: promoted },
+  "/photos":    { title: "사진첩",     nav: "사진첩",    view: photos, staffOnly: true },
   "/teachers":  { title: "교사·간사",  nav: "교사·간사", view: teachers },
   "/import":    { title: "가져오기",   nav: "가져오기",  view: importer, staffOnly: true },
   "/login":     { title: "로그인",     view: login,  guestOnly: true },
@@ -157,9 +160,25 @@ function renderBanner() {
   }
   installTelCopy();
   installTopButton();
+  registerServiceWorker();
+  initInstallPrompt();
   renderBanner();
   render();
 })();
+
+// ── 서비스 워커 ────────────────────────────────────────────
+//   «홈 화면에 추가» 가 뜨게 하고, 잠깐 인터넷이 끊겨도 화면이 열리게 합니다.
+//   (새로 올린 내용을 먼저 가져오는 방식이라 오래된 화면이 남지 않습니다)
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  if (location.protocol !== "https:" && location.hostname !== "localhost") return;
+  const go = () => navigator.serviceWorker
+    .register("./sw.js")
+    .catch(() => { /* 없어도 앱은 그대로 돕니다 */ });
+  // app.js 는 화면이 다 뜬 뒤에 실행될 수도 있어서, 이미 끝났으면 바로 등록합니다
+  if (document.readyState === "complete") go();
+  else window.addEventListener("load", go, { once: true });
+}
 
 export { isAdmin };
 

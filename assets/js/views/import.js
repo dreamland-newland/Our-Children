@@ -5,14 +5,17 @@
 //  · 반영 전 신규 / 변경 / 동일 미리보기 후 확인
 // ============================================================
 import {
-  state, api, isLoggedIn, currentVersion, cellIdOf, cellNameOf, cellRoleOf, uid, autoGrade,
+  state, api, isLoggedIn, currentVersion, cellIdOf, cellNameOf, cellRoleOf, uid, autoGrade, gradeOf,
 } from "../data.js";
-import { esc, toast, digits, modal, confirmDialog } from "../ui.js";
+import { esc, toast, digits, modal, confirmDialog, byName, resizeImage } from "../ui.js";
 import { GRADES, DEFAULT_TERM_LABEL } from "../config.js";
 import { loadXLSX } from "../xlsx.js";
 
 let sheets = [];        // 분석 결과
 let fileName = "";
+
+let photoRows = [];      // 사진 일괄 올리기 — 파일에서 꺼낸 사진 목록
+let photoAsTeacher = false;
 
 // ── 헤더 별칭 사전 ────────────────────────────────────────
 const ALIASES = {
@@ -138,7 +141,7 @@ const isExampleRow = (row) => (row || []).some((c) => EXAMPLE_RE.test(String(c ?
 function cleanRole(v) {
   const t = norm(v);
   if (!t) return null;
-  for (const r of ["교역자", "사모", "간사", "교사"]) if (t.includes(r)) return r;
+  for (const r of ["담임목사", "교역자", "사모", "간사", "교사"]) if (t.includes(r)) return r;
   return null;
 }
 
@@ -526,6 +529,27 @@ export function html() {
     </div>
   </div>
 
+  <div class="card card-pad" style="margin-top:16px">
+    <div class="section-label" style="margin-top:0">사진만 한꺼번에 올리기 (선택)</div>
+    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">
+      사진관에서 반별로 만들어 준 <b>«사진 대장»</b> 엑셀(사진 줄 바로 아래 같은 열에 이름이 적힌 표)이 있다면,
+      거기 박힌 사진을 한 번에 꺼내 <b>이름이 같은 사람</b>에게 넣어 드립니다.
+      위 세 가지 명부와는 <b>다른 파일이어도</b> 됩니다 — 사진과 그 바로 아래 이름 칸만 봅니다.
+    </div>
+    <label class="chk" style="margin-bottom:10px">
+      <input type="checkbox" id="photoIsTeacher">
+      <span>이 사진들은 학생이 아니라 <b>교사·간사</b> 사진입니다</span>
+    </label>
+    <div class="card" id="photoDrop" style="border-style:dashed;border-width:2px;text-align:center;
+         padding:26px 20px;cursor:pointer;transition:background .15s">
+      <div style="font-weight:650">여기에 사진 대장 엑셀을 끌어다 놓거나 클릭하세요 (여러 개 한 번에 가능)</div>
+      <div style="color:var(--text-muted);font-size:12.5px;margin-top:4px">
+        .xlsx 파일 — 사진이 실제로 박혀 있어야 합니다 (사진을 나중에 붙여넣은 파일은 못 읽습니다)</div>
+      <input type="file" id="photoFile" accept=".xlsx" multiple style="display:none">
+    </div>
+    <div id="photoResult" style="margin-top:14px"></div>
+  </div>
+
   <div id="result" style="margin-top:16px"></div>`;
 }
 
@@ -546,6 +570,141 @@ export function mount(root, rerender) {
   input.addEventListener("change", () => {
     if (input.files[0]) handleFile(input.files[0], root, rerender);
   });
+
+  const photoDrop = root.querySelector("#photoDrop");
+  const photoInput = root.querySelector("#photoFile");
+  photoDrop?.addEventListener("click", () => photoInput.click());
+  photoDrop?.addEventListener("dragover", (e) => {
+    e.preventDefault(); photoDrop.style.background = "var(--surface-2)";
+  });
+  photoDrop?.addEventListener("dragleave", () => { photoDrop.style.background = ""; });
+  photoDrop?.addEventListener("drop", (e) => {
+    e.preventDefault(); photoDrop.style.background = "";
+    if (e.dataTransfer.files.length) handlePhotoFiles([...e.dataTransfer.files], root, rerender);
+  });
+  photoInput?.addEventListener("change", () => {
+    if (photoInput.files.length) handlePhotoFiles([...photoInput.files], root, rerender);
+  });
+  root.querySelector("#photoIsTeacher")?.addEventListener("change", (e) => {
+    photoAsTeacher = e.target.checked;
+    photoRows = [];
+    drawPhotoResult(root, rerender);
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  사진만 한꺼번에 올리기 — 사진 대장 엑셀에서 사진 꺼내기
+// ════════════════════════════════════════════════════════════
+async function handlePhotoFiles(fileList, root, rerender) {
+  const res = root.querySelector("#photoResult");
+  res.innerHTML = `<div class="empty" style="padding:20px 0">사진을 꺼내는 중…</div>`;
+  photoAsTeacher = !!root.querySelector("#photoIsTeacher")?.checked;
+  const pool = photoAsTeacher ? state.teachers : state.students;
+  const rows = [];
+  try {
+    const { extractPhotosFromWorkbook } = await import("../xlsx-photos.js");
+    for (const file of fileList) {
+      const extracted = await extractPhotosFromWorkbook(file);
+      for (const item of extracted) {
+        const hits = item.name ? pool.filter((p) => nameKey(p.name) === nameKey(item.name)) : [];
+        rows.push({
+          file: file.name, sheet: item.sheet, name: item.name, blob: item.blob,
+          url: URL.createObjectURL(item.blob),
+          chosenId: hits.length ? hits[0].id : null,
+        });
+      }
+    }
+  } catch (e) {
+    console.error(e);
+    res.innerHTML = `<div class="form-error" style="margin:0">사진을 꺼내지 못했습니다: ${esc(e.message)}</div>`;
+    return;
+  }
+  if (!rows.length) {
+    res.innerHTML = `<div class="form-note" style="margin:0">
+      이 파일에서 사진을 찾지 못했습니다. 사진이 실제로 셀 위에 «박혀» 있는 엑셀인지 확인해 주세요.</div>`;
+    return;
+  }
+  photoRows = rows;
+  drawPhotoResult(root, rerender);
+}
+
+function drawPhotoResult(root, rerender) {
+  const res = root.querySelector("#photoResult");
+  if (!photoRows.length) { res.innerHTML = ""; return; }
+  const pool = photoAsTeacher ? state.teachers : state.students;
+  const poolSorted = [...pool].sort((a, b) => byName(a.name, b.name));
+  const poolOpts = poolSorted.map((p) => `<option value="${p.id}">${esc(p.name)}${
+    photoAsTeacher ? ` (${esc(p.role)})` : (gradeOf(p) ? ` · ${esc(gradeOf(p))}` : "")}</option>`).join("");
+  const matched = photoRows.filter((r) => r.chosenId).length;
+
+  res.innerHTML = `
+    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">
+      사진 <b>${photoRows.length}장</b>을 찾았습니다 · 이름이 자동으로 맞은 사진 <b>${matched}장</b>
+      ${photoRows.length - matched ? ` · <b>넣을 곳을 확인해야 하는 사진 ${photoRows.length - matched}장</b>` : ""}
+    </div>
+    <div class="table-wrap" style="max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:8px">
+      <table class="data">
+        <thead><tr><th></th><th>파일 속 이름</th><th>넣을 곳</th></tr></thead>
+        <tbody>
+          ${photoRows.map((r, i) => `
+          <tr>
+            <td><span class="ava" style="width:40px;height:40px"><img src="${r.url}" alt=""></span></td>
+            <td>${r.name ? esc(r.name) : '<span class="badge crit">이름을 못 찾음</span>'}
+              <div style="font-size:11px;color:var(--text-muted)">${esc(r.sheet)} · ${esc(r.file)}</div></td>
+            <td><select data-row="${i}" style="width:auto;max-width:220px">
+              <option value="">넣지 않음</option>
+              ${poolOpts}
+            </select></td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-foot" style="border:1px solid var(--border);border-top:none;
+         border-radius:0 0 8px 8px;padding:12px 14px">
+      <span style="margin-right:auto;font-size:12.5px;color:var(--text-muted)">
+        선택한 사진만 올라갑니다. 이미 사진이 있는 사람은 <b>새 사진으로 바뀝니다.</b></span>
+      <button class="btn btn-primary" id="applyPhotos" ${matched ? "" : "disabled"}>${matched}장 올리기</button>
+    </div>`;
+
+  res.querySelectorAll("[data-row]").forEach((sel) => {
+    const i = +sel.dataset.row;
+    sel.value = photoRows[i].chosenId || "";
+    sel.addEventListener("change", () => {
+      photoRows[i].chosenId = sel.value || null;
+      const n = photoRows.filter((r) => r.chosenId).length;
+      const btn = res.querySelector("#applyPhotos");
+      btn.textContent = `${n}장 올리기`;
+      btn.disabled = !n;
+    });
+  });
+
+  res.querySelector("#applyPhotos")?.addEventListener("click", () => applyPhotos(root, rerender));
+}
+
+async function applyPhotos(root, rerender) {
+  const todo = photoRows.filter((r) => r.chosenId);
+  if (!todo.length) return;
+  if (!(await confirmDialog(
+    `사진 ${todo.length}장을 올릴까요? 이미 사진이 있는 사람은 새 사진으로 바뀝니다.`,
+    { danger: false, okText: "올리기" }))) return;
+
+  const btn = root.querySelector("#applyPhotos");
+  let ok = 0, fail = 0;
+  for (let i = 0; i < todo.length; i++) {
+    if (btn) btn.textContent = `올리는 중… (${i + 1}/${todo.length})`;
+    try {
+      const cropped = await resizeImage(todo[i].blob, 400, 0.85);
+      if (photoAsTeacher) await api.uploadTeacherPhoto(todo[i].chosenId, cropped);
+      else await api.uploadPhoto(todo[i].chosenId, cropped);
+      ok++;
+    } catch (e) { console.error(e); fail++; }
+  }
+  await api.refresh();
+  photoRows = [];
+  const res = root.querySelector("#photoResult");
+  if (res) res.innerHTML = "";
+  toast(fail ? `${ok}장을 올렸습니다. ${fail}장은 올리지 못했습니다.` : `${ok}장을 올렸습니다.`, fail ? "err" : "");
+  rerender();
 }
 
 async function handleFile(file, root, rerender) {
