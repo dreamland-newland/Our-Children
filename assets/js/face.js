@@ -5,7 +5,7 @@
 //    옆으로 누운 사진도 «어느 쪽이 위인지» 함께 알려 줍니다.
 //  · 얼굴을 못 찾으면 null 을 돌려줍니다 (그럴 땐 사람이 직접 맞추면 됩니다).
 // ============================================================
-import { loadScript } from "./ui.js";
+import { loadScript, drawScaled, PHOTO_MAX, PHOTO_MIN, PHOTO_Q } from "./ui.js";
 
 /** 찾을 때 쓰는 그림 크기 — 크면 잘 찾지만 느립니다 */
 const WORK_PX = 640;
@@ -98,7 +98,7 @@ export function faceCropRect(hit, tight = FACE_TIGHTNESS) {
  * · 얼굴이 하나만 또렷하게 잡힐 때만 잘라 주고, 못 찾거나 여러 명이면 null 을 돌려줍니다.
  *   (단체사진에서 누구 얼굴인지는 앱이 알 수 없으니 사람이 정하는 게 맞습니다)
  */
-export async function autoFaceCrop(blob, { size = 400, quality = 0.85, maxFaces = 1 } = {}) {
+export async function autoFaceCrop(blob, { size = PHOTO_MAX, quality = PHOTO_Q, maxFaces = 1 } = {}) {
   let bitmap;
   try { bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" }); }
   catch { try { bitmap = await createImageBitmap(blob); } catch { return null; } }
@@ -107,11 +107,12 @@ export async function autoFaceCrop(blob, { size = 400, quality = 0.85, maxFaces 
     if (!hit || hit.count > maxFaces) return null;
     const { cv } = rotatedCanvas(bitmap, bitmap.width, bitmap.height, hit.deg, 0);
     const r = faceCropRect(hit);
+    // 원본에서 실제로 쓰는 픽셀만큼 저장합니다 (있는 화질을 버리지도, 억지로 늘리지도 않게)
+    const px = Math.round(Math.min(size, Math.max(PHOTO_MIN, r.size)));
     const out = document.createElement("canvas");
-    out.width = out.height = size;
+    out.width = out.height = px;
     const c = out.getContext("2d");
-    c.imageSmoothingQuality = "high";
-    c.drawImage(cv, r.x, r.y, r.size, r.size, 0, 0, size, size);
+    drawScaled(c, cv, r.x, r.y, r.size, r.size, px, px);
     return await new Promise((res) => out.toBlob((b) => res(b || null), "image/jpeg", quality));
   } finally { bitmap.close?.(); }
 }

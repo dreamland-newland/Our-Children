@@ -565,17 +565,29 @@ a.tel { color: var(--series-1); }
 .role-add input { flex: 1; min-width: 0; }
 .role-add .btn { flex: none; }
 
+/* 휴대폰 관리자 설정 — 아이폰 설정처럼 «목록 → 들어가기» */
+.sset-list { display: flex; flex-direction: column; }
+.sset-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 15px 16px; border: 0; border-bottom: 1px solid var(--grid);
+  background: none; font: inherit; color: inherit; cursor: pointer;
+}
+.sset-row:last-child { border-bottom: 0; }
+.sset-row:active { background: var(--surface-2); }
+.sset-ico { font-size: 19px; width: 26px; text-align: center; flex: none; }
+.sset-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sset-text b { font-size: 15px; font-weight: 620; }
+.sset-text small { font-size: 12px; color: var(--text-muted); }
+.sset-chev { color: var(--text-muted); font-size: 19px; flex: none; }
+.sset-back {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.sset-back b { font-size: 14px; }
+
 @media (max-width: 640px) {
   /* 모달 안쪽 여백이 16px 이므로 그만큼만 되물립니다 (안 그러면 오른쪽이 잘립니다) */
   .settings-shell { flex-direction: column; max-height: none; min-height: 0; margin: -16px; }
-  .settings-nav {
-    flex: 0 0 auto; flex-direction: row; width: 100%; overflow-x: auto;
-    border-right: 0; border-bottom: 1px solid var(--border);
-    padding: 8px; gap: 6px; scrollbar-width: none;
-  }
-  .settings-nav::-webkit-scrollbar { display: none; }
-  .snav-item { flex: 0 0 auto; padding: 8px 12px; }
-  .snav-label { white-space: nowrap; }
   .settings-pane { padding: 16px; }
   /* 직함 한 줄이 잘리지 않도록 — 버튼은 아래 줄로 내려갑니다 */
   .role-move { flex-direction: row; gap: 4px; }
@@ -763,38 +775,49 @@ a.tel { color: var(--series-1); }
   .to-top { bottom: calc(18px + env(safe-area-inset-bottom)); }
 }
 
-/* ── 사진 자르기 창 ─────────────────────────────────────── */
+/* ── 사진 자르기 창 (동그라미 안이 프로필 사진) ───────────── */
 .crop-stage { display: grid; place-items: center; padding: 2px 0 12px; }
-.crop-area {
-  position: relative; overflow: hidden; border-radius: 10px;
-  background: var(--surface-2); touch-action: none; user-select: none;
+.crop-view {
+  position: relative; overflow: hidden; border-radius: 14px;
+  background: var(--surface-2); touch-action: none; user-select: none; cursor: grab;
 }
-.crop-area img { display: block; max-width: none; pointer-events: none; }
-.crop-dim {
-  position: absolute; inset: 0; pointer-events: none;
-  background: rgba(0, 0, 0, .5);
+.crop-view:active { cursor: grabbing; }
+.crop-view img {
+  position: absolute; top: 0; left: 0; transform-origin: 0 0;
+  max-width: none; display: block; pointer-events: none;
 }
-.crop-frame {
-  position: absolute; cursor: move;
-  border: 1.5px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
+/* 네모 안의 동그라미 — 바깥은 살짝 어둡게 해서 «여기가 사진» 임을 보여 줍니다 */
+.crop-guide {
+  position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  border: 1.5px solid rgba(255, 255, 255, .92);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .40);
 }
-/* 삼분할 안내선 */
-.crop-frame::before, .crop-frame::after {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  border-style: dashed; border-color: rgba(255, 255, 255, .5);
+.crop-tools {
+  display: flex; gap: 8px; justify-content: center; align-items: center;
+  margin-top: 12px; flex-wrap: wrap;
 }
-.crop-frame::before { border-width: 1px 0; top: 33.33%; bottom: 33.33%; }
-.crop-frame::after  { border-width: 0 1px; left: 33.33%; right: 33.33%; }
-.crop-frame .hd {
-  position: absolute; width: 22px; height: 22px; box-sizing: border-box;
-  border: 3px solid #fff; background: transparent;
+/* − 100% + 묶음 */
+.zoomer {
+  display: inline-flex; align-items: center; overflow: hidden;
+  border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface);
 }
-.crop-frame .hd.nw { left: -2px;  top: -2px;    border-right: 0; border-bottom: 0; cursor: nwse-resize; }
-.crop-frame .hd.ne { right: -2px; top: -2px;    border-left: 0;  border-bottom: 0; cursor: nesw-resize; }
-.crop-frame .hd.sw { left: -2px;  bottom: -2px; border-right: 0; border-top: 0;    cursor: nesw-resize; }
-.crop-frame .hd.se { right: -2px; bottom: -2px; border-left: 0;  border-top: 0;    cursor: nwse-resize; }
-.crop-tools { display: flex; gap: 8px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+.zoomer button {
+  border: 0; background: none; font: inherit; cursor: pointer; color: var(--text-primary);
+  padding: 6px 13px; min-height: 32px; line-height: 1;
+}
+.zoomer button:hover { background: var(--surface-2); }
+.zoomer .zpct {
+  min-width: 66px; font-size: 13px; font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+}
+/* 원본 픽셀이 모자라기 시작하면 («더 키우면 흐려집니다») 주황으로 알려 줍니다 */
+.zoomer .zpct.soft { color: var(--series-2); }
+.zoomer .zpct.soft::after { content: " ⚠"; font-size: 11px; }
+.zpct-input {
+  width: 74px; text-align: center; font-variant-numeric: tabular-nums;
+  padding: 5px 8px; font-size: 13px;
+}
 
 /* ── 홈 화면에 추가 안내 배너 ───────────────────────────── */
 .install-bar {
@@ -954,6 +977,14 @@ table.data.peek td.hit {
 .hpop-item.on { color: var(--series-1); font-weight: 650; background: var(--series-1-soft); }
 .hpop-item span { color: var(--text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .hpop-item.on span { color: inherit; }
+
+/* 양식 파일 받기 목록 — 이름 아래에 설명을 두 줄로 쌓습니다 (옆으로 붙이면 글자가 깨집니다) */
+.hpop.tpl-pop { min-width: 232px; max-width: 300px; }
+.tpl-pop .hpop-item {
+  flex-direction: column; align-items: flex-start; gap: 1px; padding: 9px 14px;
+}
+.tpl-pop .hpop-item b { font-size: 13.5px; font-weight: 620; }
+.tpl-pop .hpop-item span { line-height: 1.4; white-space: normal; }
 
 /* ── 체크박스 라벨 (페이지 상단 옵션) ─────────────────────── */
 .chk {

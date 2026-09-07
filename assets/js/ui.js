@@ -211,10 +211,40 @@ export function resizeImage(file, size = 400, quality = 0.85) {
     img.src = url;
   });
 }
+// ── 사진 크기 기준 ──────────────────────────────────────────
+//   저장하는 사진은 «화면에 보이는 크기» 보다 넉넉해야 합니다.
+//   그래야 나중에 다시 자르거나 크게 당겨도 흐려지지 않습니다.
+export const PHOTO_MAX = 800;      // 잘라서 저장하는 프로필 사진의 한 변 (최대)
+export const PHOTO_MIN = 240;      // 이보다 작게는 만들지 않습니다
+export const PHOTO_SOFT = 400;     // 원본 픽셀이 이보다 적으면 «흐려집니다» 라고 알려 줍니다
+export const PHOTO_Q = 0.92;       // JPEG 품질 (0.85 → 0.92 로 올렸습니다)
+//   ※ 원본에 있는 픽셀보다 «크게» 만들어 봐야 선명해지지 않고 용량만 커집니다.
+//      그래서 잘라낸 부분의 실제 픽셀 수를 그대로 쓰되, 위 범위 안으로만 둡니다.
+
+/** 큰 사진을 한 번에 확 줄이면 거칠어져서, 절반씩 여러 번 줄입니다.
+ *  (원본 3000px → 800px 처럼 많이 줄일 때 눈에 띄게 깨끗해집니다) */
+export function drawScaled(ctx, source, sx, sy, sw, sh, dw, dh) {
+  let cur = source, cx = sx, cy = sy, cw = sw, ch = sh;
+  // 절반보다 더 줄여야 하면, 절반씩 미리 줄여 둡니다
+  while (cw > dw * 2 && ch > dh * 2) {
+    const half = document.createElement("canvas");
+    half.width = Math.max(1, Math.round(cw / 2));
+    half.height = Math.max(1, Math.round(ch / 2));
+    const hc = half.getContext("2d");
+    hc.imageSmoothingEnabled = true;
+    hc.imageSmoothingQuality = "high";
+    hc.drawImage(cur, cx, cy, cw, ch, 0, 0, half.width, half.height);
+    cur = half; cx = 0; cy = 0; cw = half.width; ch = half.height;
+  }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(cur, cx, cy, cw, ch, 0, 0, dw, dh);
+}
+
 /** 사진을 «자르지 않고» 크기만 줄입니다 (긴 쪽이 max 픽셀).
  *  엑셀로 한꺼번에 올릴 때 씁니다 — 원본이 통째로 남아 있어야
  *  나중에 «사진 다시 자르기» 로 원하는 부분을 다시 고를 수 있습니다. */
-export function fitImage(file, max = 900, quality = 0.85) {
+export function fitImage(file, max = 1400, quality = PHOTO_Q) {
   return new Promise((resolve, reject) => {
     if (!/^image\//.test(file.type)) return reject(new Error("이미지 파일만 올릴 수 있습니다."));
     const img = new Image();
@@ -225,9 +255,7 @@ export function fitImage(file, max = 900, quality = 0.85) {
       const cv = document.createElement("canvas");
       cv.width = Math.max(1, Math.round(img.width * scale));
       cv.height = Math.max(1, Math.round(img.height * scale));
-      const ctx = cv.getContext("2d");
-      ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      drawScaled(cv.getContext("2d"), img, 0, 0, img.width, img.height, cv.width, cv.height);
       cv.toBlob((blob) => blob ? resolve(blob) : reject(new Error("이미지를 처리하지 못했습니다.")),
                 "image/jpeg", quality);
     };
@@ -264,7 +292,7 @@ export async function recropStoredPhoto(src) {
  *  · 옆으로 누운 사진은 «↺ ↻» 로 돌려 세웁니다.
  *  · «적용» 을 누르면 그 부분만 잘린 JPEG 한 장이 나옵니다. 취소하면 null.
  */
-export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
+export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = {}) {
   if (!/^image\//.test(file.type)) throw new Error("이미지 파일만 올릴 수 있습니다.");
   let src = await loadUpright(file);             // 휴대폰 사진 회전 먼저 반영
   const releaseOriginal = src.release;           // 창을 닫을 때 원본 비트맵을 놓아 줍니다
@@ -315,10 +343,18 @@ export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
       tx = w <= V ? (V - w) / 2 : Math.min(0, Math.max(V - w, tx));
       ty = h <= V ? (V - h) / 2 : Math.min(0, Math.max(V - h, ty));
     };
+    /** 지금 네모 안에 들어오는 «원본 픽셀» 수 (한 변) — 이게 곧 사진의 선명함입니다 */
+    const srcPixels = () => V / z;
     const apply = () => {
       clamp();
       imgEl.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`;
       pctEl.textContent = `${Math.round((z / fitZ) * 100)}%`;
+      // 원본 픽셀이 모자라기 시작하면 («더 키우면 흐려집니다») 퍼센트를 주황으로
+      const soft = srcPixels() < PHOTO_SOFT;
+      pctEl.classList.toggle("soft", soft);
+      pctEl.title = soft
+        ? "더 키우면 사진이 흐려집니다 (원본 픽셀이 모자랍니다)"
+        : "눌러서 직접 적기";
     };
     /** ax, ay (네모 안 좌표) 를 붙잡은 채 배율만 바꿉니다 */
     const setZoom = (nz, ax = V / 2, ay = V / 2) => {
@@ -469,12 +505,16 @@ export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
                <button class="btn btn-primary" id="cropOk">적용</button>`,
       onMount(box) {
         box.querySelector("#cropOk").addEventListener("click", () => {
+          // 원본에서 실제로 쓰는 픽셀만큼 저장합니다.
+          //  · 넉넉하면 그대로(최대 size) — 있는 화질을 버리지 않습니다
+          //  · 많이 당겨서 픽셀이 모자라면 억지로 늘리지 않고 그 크기로 (최소 PHOTO_MIN)
+          const region = srcPixels();
+          const out = Math.round(Math.max(PHOTO_MIN, Math.min(size, region)));
           const cv = document.createElement("canvas");
-          cv.width = cv.height = size;
+          cv.width = cv.height = out;
           const ctx = cv.getContext("2d");
-          ctx.imageSmoothingQuality = "high";
           // 지금 네모 안에 보이는 부분이 그대로 사진이 됩니다
-          ctx.drawImage(src.bitmap, -tx / z, -ty / z, V / z, V / z, 0, 0, size, size);
+          drawScaled(ctx, src.bitmap, -tx / z, -ty / z, region, region, out, out);
           cv.toBlob((blob) => {
             done = true; releaseOriginal?.(); close(); resolve(blob || null);
           }, "image/jpeg", quality);

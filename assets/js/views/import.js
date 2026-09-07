@@ -812,7 +812,7 @@ async function applyPhotos(root, rerender) {
       // 2) 못 찾거나 여러 명이면 자르지 않고 통째로 — 나중에 «다시 자르기» 로 고르시면 됩니다.
       let out = null;
       if (autoCrop) { out = await autoCrop(todo[i].blob); if (out) faced++; }
-      if (!out) out = await fitImage(todo[i].blob, 900, 0.85);
+      if (!out) out = await fitImage(todo[i].blob, 1400);
       if (photoAsTeacher) await api.uploadTeacherPhoto(todo[i].chosenId, out);
       else await api.uploadPhoto(todo[i].chosenId, out);
       ok++;

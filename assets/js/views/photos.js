@@ -5,7 +5,7 @@ import {
 import { esc, avatar, byName, toast } from "../ui.js";
 import { GRADES } from "../config.js";
 import { showStudent } from "./students.js";
-import { editTeacher } from "./teachers.js";
+import { showTeacher } from "./teachers.js";
 
 let tab = "students";     // 'students' | 'teachers'
 let q = "";
@@ -128,7 +128,7 @@ function bindFaces(root, rerender) {
       if (s) showStudent(s, rerender);
     } else {
       const t = state.teachers.find((x) => x.id === id);
-      if (t) editTeacher(t, rerender);
+      if (t) showTeacher(t, rerender);
       else toast("정보를 찾을 수 없습니다.", "err");
     }
   }));

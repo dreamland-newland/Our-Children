@@ -5,8 +5,9 @@ import {
 } from "../ui.js";
 import { bindDownload as bindXlsx } from "../xlsx.js";
 
-// 정렬 상태 — 칸 머리를 눌러 마음대로 바꿀 수 있습니다
-const f = { sort: "seq", dir: 1 };
+// 정렬 상태 — 칸 머리를 눌러 마음대로 바꿀 수 있습니다.
+// 처음에는 «구분» 순서(직함 관리에서 정한 차례대로 — 담임이 맨 위)로 보여 줍니다.
+const f = { sort: "role", dir: 1 };
 
 const COLS = [
   { key: "seq",   label: "#" },
@@ -23,7 +24,12 @@ function sortedRows() {
   const key = f.sort;
   rows.sort((a, b) => {
     let x, y;
-    if (key === "role") { x = roleOptionRank(a.role); y = roleOptionRank(b.role); }
+    if (key === "role") {
+      // 같은 직함끼리는 이름 순으로 (직함 차례는 «직함 관리» 에서 정한 그대로)
+      const ra = roleOptionRank(a.role), rb = roleOptionRank(b.role);
+      if (ra !== rb) return (ra - rb) * f.dir;
+      return byName(a.name, b.name);
+    }
     else if (key === "user") { x = a.user_id ? 1 : 0; y = b.user_id ? 1 : 0; }
     else if (key === "name") { return byName(a.name, b.name) * f.dir; }
     else { x = a[key]; y = b[key]; }
@@ -66,7 +72,7 @@ export function html() {
       <thead><tr>${headRow()}</tr></thead>
       <tbody>
         ${rows.map((t, i) => `
-        <tr data-id="${t.id}">
+        <tr class="clickable" data-id="${t.id}">
           <td class="num" title="교적 번호 ${t.seq ?? "-"}">${i + 1}</td>
           <td><span style="display:inline-flex;align-items:center;gap:8px">
               ${avatar(t.name, teacherPhotoOf(t.id), 26)}
@@ -104,12 +110,62 @@ function headRow() {
   }).join("") + (isLoggedIn() ? "<th></th>" : "");
 }
 
+/** 이름을 누르면 뜨는 신상 — 학생 주소록과 같은 방식입니다 */
+export function showTeacher(t, after) {
+  if (!t) return;
+  const canEdit = isLoggedIn();
+  modal({
+    title: `${t.name} · ${t.role || ""}`,
+    body: `
+      <div style="display:flex;gap:16px;align-items:center;margin-bottom:18px">
+        ${avatar(t.name, teacherPhotoOf(t.id), 76)}
+        <div>
+          <div style="font-size:19px;font-weight:680">${esc(t.name)}</div>
+          <div style="font-size:13px;color:var(--text-secondary)">${esc(t.role || "")}</div>
+          ${!isLoggedIn() && !teacherPhotoOf(t.id)
+            ? '<div style="font-size:12px;color:var(--text-muted);margin-top:3px">🔒 사진은 로그인한 교사진에게만 보입니다</div>' : ""}
+        </div>
+      </div>
+      <div class="detail-grid">
+        <dt>이름</dt><dd><b>${esc(t.name)}</b></dd>
+        <dt>구분</dt><dd><span class="badge ${t.role === "간사" ? "" : "blue"}">${esc(t.role)}</span></dd>
+        <dt>생일</dt><dd>${t.birth ? esc(fmtBirth(t.birth))
+          : t.birth_md ? esc(t.birth_md.replace("-", "월 ") + "일") +
+              ' <span style="color:var(--text-muted);font-size:12px">(연도 미등록)</span>'
+          : dash("")}</dd>
+        <dt>연락처</dt><dd>${isLoggedIn() ? telLink(t.phone)
+          : '<span style="color:var(--text-muted)">🔒 로그인 후 표시</span>'}</dd>
+        <dt>계정</dt><dd>${t.user_id
+          ? '<span class="badge good">가입</span> <span style="color:var(--text-muted);font-size:12px">이 명부 자리에 계정이 연결돼 있습니다</span>'
+          : '<span class="badge">미가입</span> <span style="color:var(--text-muted);font-size:12px">아직 회원가입 전입니다</span>'}</dd>
+      </div>
+      <div class="section-label">비고</div>
+      <div style="font-size:14px">${isLoggedIn()
+        ? (t.note ? esc(t.note) : '<span style="color:var(--text-muted)">기록된 비고가 없습니다.</span>')
+        : '<span style="color:var(--text-muted)">🔒 로그인 후 표시</span>'}</div>`,
+    footer: canEdit
+      ? `<button class="btn" data-close>닫기</button>
+         <button class="btn btn-primary" data-edit>편집</button>`
+      : `<button class="btn" data-close>닫기</button>`,
+    onMount(box, close) {
+      box.querySelector("[data-edit]")?.addEventListener("click", () => { close(); editTeacher(t, after); });
+    },
+  });
+}
+
 export function mount(root, rerender) {
   root.querySelector("#adminSettings")?.addEventListener("click", () => openAdminSettings(rerender));
   root.querySelector("#accounts2")?.addEventListener("click", () => openAdminSettings(rerender, "accounts"));
   root.querySelector("#addBtn")?.addEventListener("click", () => editTeacher(null, rerender));
-  root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () =>
-    editTeacher(state.teachers.find((t) => t.id === b.dataset.edit), rerender)));
+  root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    editTeacher(state.teachers.find((t) => t.id === b.dataset.edit), rerender);
+  }));
+  // 줄(이름)을 누르면 신상이 열립니다 — 주소록과 같은 방식
+  root.querySelectorAll("tr[data-id]").forEach((tr) => tr.addEventListener("click", (e) => {
+    if (e.target.closest("a,[data-edit]")) return;
+    showTeacher(state.teachers.find((t) => t.id === tr.dataset.id), rerender);
+  }));
   root.querySelectorAll("[data-sort]").forEach((b) => b.addEventListener("click", () => {
     const k = b.dataset.sort;
     if (f.sort === k) f.dir *= -1; else { f.sort = k; f.dir = 1; }
@@ -127,23 +183,31 @@ export function mount(root, rerender) {
 //  «설정» 한 곳에 모아 두고, 왼쪽 목록에서 골라 보는 방식으로 묶었습니다.
 // ════════════════════════════════════════════════════════════
 const SETTINGS_SECTIONS = [
-  { key: "accounts", icon: "👥", label: "가입 승인 · 계정", render: paneAccounts,
-    badge: () => state.pendingCount || 0 },
-  { key: "signup",   icon: "🔐", label: "가입 신청 설정",   render: paneSignup },
-  { key: "notify",   icon: "🔔", label: "알림 설정",        render: paneNotify },
-  { key: "roles",    icon: "🏷️", label: "직함 관리",        render: paneRoles },
+  { key: "accounts", icon: "👥", label: "가입 승인 · 계정", desc: "새 신청 승인 · 관리자 지정 · 계정 해제",
+    render: paneAccounts, badge: () => state.pendingCount || 0 },
+  { key: "signup",   icon: "🔐", label: "가입 신청 설정",   desc: "신청을 받을지 말지", render: paneSignup },
+  { key: "notify",   icon: "🔔", label: "알림 설정",        desc: "가입 신청 메일 받을 주소", render: paneNotify },
+  { key: "roles",    icon: "🏷️", label: "직함 관리",        desc: "구분 추가 · 이름 변경 · 차례", render: paneRoles },
 ];
 
+const isPhone = () => window.matchMedia("(max-width: 640px)").matches;
+
 function openAdminSettings(after, initial = "accounts") {
-  let sec = initial;
+  //  · PC   — 왼쪽 목록 + 오른쪽 내용 (맥 설정처럼)
+  //  · 휴대폰 — 먼저 목록만 보여 주고, 하나를 누르면 그 화면으로 들어갑니다 (아이폰 설정처럼)
+  const phone = isPhone();
+  let sec = phone ? null : initial;
+
   const shell = document.createElement("div");
   shell.className = "settings-shell";
   const navEl = document.createElement("div");
   navEl.className = "settings-nav";
   const paneEl = document.createElement("div");
   paneEl.className = "settings-pane";
-  shell.append(navEl, paneEl);
 
+  const secOf = (k) => SETTINGS_SECTIONS.find((x) => x.key === k);
+
+  /** PC 왼쪽 목록 */
   const drawNav = () => {
     navEl.innerHTML = SETTINGS_SECTIONS.map((s) => {
       const badge = s.badge?.();
@@ -158,12 +222,53 @@ function openAdminSettings(after, initial = "accounts") {
       sec = b.dataset.sec; drawNav(); drawPane();
     }));
   };
+
+  /** 휴대폰 첫 화면 — 큼직한 목록 */
+  const phoneListHtml = () => `
+    <div class="sset-list">
+      ${SETTINGS_SECTIONS.map((s) => {
+        const badge = s.badge?.();
+        return `
+        <button type="button" class="sset-row" data-sec="${s.key}">
+          <span class="sset-ico">${s.icon}</span>
+          <span class="sset-text"><b>${esc(s.label)}</b><small>${esc(s.desc)}</small></span>
+          ${badge ? `<span class="badge orange">${badge}</span>` : ""}
+          <span class="sset-chev" aria-hidden="true">›</span>
+        </button>`;
+      }).join("")}
+    </div>`;
+
   const drawPane = () => {
     paneEl.innerHTML = "";
-    const s = SETTINGS_SECTIONS.find((x) => x.key === sec);
-    s.render(paneEl, () => { drawNav(); after?.(); });
+    secOf(sec).render(paneEl, () => { if (!phone) drawNav(); after?.(); });
   };
-  drawNav(); drawPane();
+
+  /** 창 전체를 다시 그립니다 (휴대폰에서 목록 ↔ 내용 오갈 때) */
+  const draw = () => {
+    shell.innerHTML = "";
+    if (phone && sec === null) {
+      shell.classList.add("sset-root");
+      shell.innerHTML = phoneListHtml();
+      shell.querySelectorAll("[data-sec]").forEach((b) => b.addEventListener("click", () => {
+        sec = b.dataset.sec; draw();
+      }));
+      return;
+    }
+    shell.classList.remove("sset-root");
+    if (phone) {
+      const bar = document.createElement("div");
+      bar.className = "sset-back";
+      bar.innerHTML = `<button type="button" class="btn btn-ghost btn-sm" data-back>‹ 설정</button>
+                       <b>${esc(secOf(sec).label)}</b>`;
+      bar.querySelector("[data-back]").addEventListener("click", () => { sec = null; draw(); });
+      shell.append(bar, paneEl);
+    } else {
+      drawNav();
+      shell.append(navEl, paneEl);
+    }
+    drawPane();
+  };
+  draw();
 
   modal({
     title: "관리자 설정", wide: true, body: shell,
