@@ -256,10 +256,12 @@ export async function recropStoredPhoto(src) {
   return cropImage(blob);
 }
 
-/** 사진에서 쓸 부분을 네모로 잘라내는 창.
- *  · 사진 전체가 보이고, 그 위에 «자를 네모» 가 얹힙니다.
- *  · 네모 안을 끌면 위치가, 네 귀퉁이를 끌면 크기가 바뀝니다 (정사각형 유지).
- *  · 옆으로 누운 사진은 «↺ ↻ 90°» 로 돌려서 세울 수 있습니다.
+/** 사진에서 쓸 부분을 고르는 창 (프로필 사진 만들기).
+ *  · 가운데 «동그라미» 안이 그대로 프로필 사진이 됩니다.
+ *  · 사진을 끌어 옮기고, ＋ − 또는 퍼센트로 크기를 키웁니다
+ *    (얼굴이 작게 찍힌 사진도 크게 당겨서 쓸 수 있습니다).
+ *  · 컴퓨터는 Ctrl(⌘)+휠, 휴대폰은 두 손가락으로도 확대·축소됩니다.
+ *  · 옆으로 누운 사진은 «↺ ↻» 로 돌려 세웁니다.
  *  · «적용» 을 누르면 그 부분만 잘린 JPEG 한 장이 나옵니다. 취소하면 null.
  */
 export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
@@ -268,57 +270,79 @@ export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
   const releaseOriginal = src.release;           // 창을 닫을 때 원본 비트맵을 놓아 줍니다
 
   return new Promise((resolve) => {
-    // 사진 전체가 들어가도록 축소해서 보여 줍니다
-    const MAX = Math.min(320, Math.max(240, Math.round(window.innerWidth * 0.72)));
-    let scale = 1, dw = 0, dh = 0;
-    const MIN = 44;                              // 자를 네모의 최소 크기
-    let fs = 0;                                  // frame size
-    let fx = 0, fy = 0;
+    // 자를 네모(=보이는 창)의 크기. 이 안에 담긴 만큼이 프로필 사진이 됩니다.
+    const V = Math.round(Math.min(320, Math.max(200, window.innerWidth * 0.66)));
+    const MAXZ = 12;                    // 최대 12배까지 당길 수 있습니다
+    let fitZ = 1;                       // 사진이 네모를 꼭 채우는 배율 (= 100%)
+    let z = 1, tx = 0, ty = 0;          // 지금 배율과 사진의 위치
     let done = false;
 
     const wrap = document.createElement("div");
     wrap.innerHTML = `
       <div class="crop-stage">
-        <div class="crop-area" id="cropArea">
+        <div class="crop-view" id="cropView" style="width:${V}px;height:${V}px">
           <img id="cropImg" alt="" draggable="false">
-          <div class="crop-dim" id="cropDim"></div>
-          <div class="crop-frame" id="cropFrame">
-            <i class="hd nw" data-h="nw"></i><i class="hd ne" data-h="ne"></i>
-            <i class="hd sw" data-h="sw"></i><i class="hd se" data-h="se"></i>
-          </div>
+          <div class="crop-guide"></div>
         </div>
       </div>
-      <div class="form-note" style="margin-top:12px">
-        네모 <b>안쪽을 끌면</b> 위치가, <b>귀퉁이를 끌면</b> 크기가 바뀝니다.
-        네모 안이 프로필 사진이 됩니다. 사진이 누워 있으면 <b>돌리기</b>로 세워 주세요.
-      </div>
       <div class="crop-tools">
+        <button type="button" class="btn btn-sm btn-primary" id="findFace"
+          title="사진에서 얼굴을 찾아 자동으로 맞춥니다">🙂 얼굴 맞추기</button>
         <button type="button" class="btn btn-sm" id="rotL" title="왼쪽으로 90° 돌리기">↺ 왼쪽</button>
         <button type="button" class="btn btn-sm" id="rotR" title="오른쪽으로 90° 돌리기">↻ 오른쪽</button>
-        <button type="button" class="btn btn-sm" id="cropAll">전체</button>
-        <button type="button" class="btn btn-sm" id="cropSquare">가운데 정사각형</button>
+        <span class="zoomer">
+          <button type="button" id="zOut" title="줄이기" aria-label="줄이기">−</button>
+          <button type="button" class="zpct" id="zPct" title="눌러서 직접 적기">100%</button>
+          <button type="button" id="zIn" title="키우기" aria-label="키우기">＋</button>
+        </span>
+        <button type="button" class="btn btn-sm" id="zFit">처음 크기</button>
+      </div>
+      <div class="form-note" style="margin-top:12px">
+        <b>동그라미 안</b>이 프로필 사진이 됩니다. 사진을 <b>끌어서</b> 옮기고,
+        <b>＋ −</b> 로 키우거나 줄이세요. 퍼센트를 누르면 <b>직접 적을 수</b> 있습니다.
+        <div style="margin-top:4px;color:var(--text-muted)">
+          컴퓨터는 <b>Ctrl(⌘)+휠</b>, 휴대폰은 <b>두 손가락</b>으로도 됩니다.
+        </div>
       </div>`;
 
+    const view = wrap.querySelector("#cropView");
     const imgEl = wrap.querySelector("#cropImg");
-    const frame = wrap.querySelector("#cropFrame");
-    const dim = wrap.querySelector("#cropDim");
-    const area = wrap.querySelector("#cropArea");
+    let pctEl = wrap.querySelector("#zPct");
 
-    /** 지금 사진 크기에 맞춰 화면을 다시 잡고, 자를 네모를 가운데로 되돌립니다 */
-    const layout = () => {
-      scale = Math.min(MAX / src.width, MAX / src.height, 1);
-      dw = Math.round(src.width * scale);
-      dh = Math.round(src.height * scale);
-      area.style.width = `${dw}px`;
-      area.style.height = `${dh}px`;
-      imgEl.style.width = `${dw}px`;
-      imgEl.style.height = `${dh}px`;
-      imgEl.src = src.url;
-      fs = Math.round(Math.min(dw, dh) * 0.85);
-      fx = Math.round((dw - fs) / 2);
-      fy = Math.round((dh - fs) / 2);
-      draw();
+    /** 사진이 네모를 늘 덮도록 위치를 붙잡아 둡니다 (빈 곳이 생기지 않게) */
+    const clamp = () => {
+      const w = src.width * z, h = src.height * z;
+      tx = w <= V ? (V - w) / 2 : Math.min(0, Math.max(V - w, tx));
+      ty = h <= V ? (V - h) / 2 : Math.min(0, Math.max(V - h, ty));
     };
+    const apply = () => {
+      clamp();
+      imgEl.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`;
+      pctEl.textContent = `${Math.round((z / fitZ) * 100)}%`;
+    };
+    /** ax, ay (네모 안 좌표) 를 붙잡은 채 배율만 바꿉니다 */
+    const setZoom = (nz, ax = V / 2, ay = V / 2) => {
+      nz = Math.min(fitZ * MAXZ, Math.max(fitZ, nz));
+      const ix = (ax - tx) / z, iy = (ay - ty) / z;
+      z = nz;
+      tx = ax - ix * z; ty = ay - iy * z;
+      apply();
+    };
+    /** 사진 전체가 네모를 꼭 채우는 «처음 크기» 로 */
+    const fitAll = () => {
+      fitZ = Math.max(V / src.width, V / src.height);
+      z = fitZ;
+      tx = (V - src.width * z) / 2;
+      ty = (V - src.height * z) / 2;
+      apply();
+    };
+    const showSrc = () => {
+      imgEl.src = src.url;
+      imgEl.style.width = `${src.width}px`;
+      imgEl.style.height = `${src.height}px`;
+      fitAll();
+    };
+    showSrc();
 
     /** 90° 돌리기 — dir 이 -1이면 왼쪽, +1이면 오른쪽 */
     const rotate = (dir) => {
@@ -330,69 +354,114 @@ export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
       c.translate(cv.width / 2, cv.height / 2);
       c.rotate((dir * Math.PI) / 2);
       c.drawImage(src.bitmap, -src.width / 2, -src.height / 2, src.width, src.height);
-      src = {
-        width: cv.width, height: cv.height, bitmap: cv,
-        url: cv.toDataURL("image/jpeg", 0.92),
-      };
-      layout();
+      src = { width: cv.width, height: cv.height, bitmap: cv, url: cv.toDataURL("image/jpeg", 0.92) };
+      showSrc();
     };
 
-    const draw = () => {
-      fs = Math.max(MIN, Math.min(fs, dw, dh));
-      fx = Math.max(0, Math.min(dw - fs, fx));
-      fy = Math.max(0, Math.min(dh - fs, fy));
-      frame.style.cssText = `left:${fx}px;top:${fy}px;width:${fs}px;height:${fs}px`;
-      // 바깥을 어둡게 (네모만 뚫린 마스크)
-      dim.style.clipPath =
-        `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0,` +
-        ` ${fx}px ${fy}px, ${fx}px ${fy + fs}px,` +
-        ` ${fx + fs}px ${fy + fs}px, ${fx + fs}px ${fy}px, ${fx}px ${fy}px)`;
-    };
-    layout();
-
-    // ── 끌기 (안쪽=이동, 귀퉁이=크기) ──
-    let mode = null, st = null;
-    const start = (e) => {
-      const h = e.target.dataset?.h;
-      mode = h || "move";
-      st = { x: e.clientX, y: e.clientY, fx, fy, fs };
-      area.setPointerCapture(e.pointerId);
-      e.preventDefault();
-    };
-    frame.addEventListener("pointerdown", start);
-    area.addEventListener("pointermove", (e) => {
-      if (!mode) return;
-      const dx = e.clientX - st.x, dy = e.clientY - st.y;
-      if (mode === "move") { fx = st.fx + dx; fy = st.fy + dy; }
-      else {
-        // 반대쪽 귀퉁이를 고정한 채 정사각형으로 늘리고 줄입니다
-        const right = st.fx + st.fs, bottom = st.fy + st.fs;
-        let n = st.fs;
-        if (mode === "se") n = st.fs + Math.max(dx, dy);
-        if (mode === "nw") n = st.fs - Math.min(dx, dy);
-        if (mode === "ne") n = st.fs + Math.max(dx, -dy);
-        if (mode === "sw") n = st.fs + Math.max(-dx, dy);
-        n = Math.max(MIN, n);
-        if (mode === "se") n = Math.min(n, dw - st.fx, dh - st.fy);
-        if (mode === "nw") { n = Math.min(n, right, bottom); fx = right - n; fy = bottom - n; }
-        if (mode === "ne") { n = Math.min(n, dw - st.fx, bottom); fy = bottom - n; }
-        if (mode === "sw") { n = Math.min(n, right, dh - st.fy); fx = right - n; }
-        fs = n;
+    // ── 끌어서 옮기기 · 두 손가락으로 확대 ──
+    const pts = new Map();
+    let pinch = null;
+    view.addEventListener("pointerdown", (e) => {
+      view.setPointerCapture(e.pointerId);
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z };
       }
-      draw();
+      e.preventDefault();
     });
-    const end = () => { mode = null; };
-    area.addEventListener("pointerup", end);
-    area.addEventListener("pointercancel", end);
+    view.addEventListener("pointermove", (e) => {
+      const prev = pts.get(e.pointerId);
+      if (!prev) return;
+      const cur = { x: e.clientX, y: e.clientY };
+      pts.set(e.pointerId, cur);
+      const r = view.getBoundingClientRect();
+      if (pts.size >= 2 && pinch) {
+        const [a, b] = [...pts.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        setZoom(pinch.z * (d / pinch.d), (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top);
+      } else {
+        tx += cur.x - prev.x; ty += cur.y - prev.y; apply();
+      }
+    });
+    const lift = (e) => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; };
+    view.addEventListener("pointerup", lift);
+    view.addEventListener("pointercancel", lift);
 
+    // ── Ctrl(⌘) + 휠 로 확대·축소 (그냥 휠은 화면 스크롤 그대로) ──
+    view.addEventListener("wheel", (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const r = view.getBoundingClientRect();
+      setZoom(z * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+
+    // ── 버튼들 ──
+    // ── 얼굴 찾아 자동으로 맞추기 ──
+    //    누워 있는 사진이면 방향까지 함께 바로잡아 줍니다.
+    wrap.querySelector("#findFace").addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      const label = btn.textContent;
+      btn.textContent = "찾는 중…";
+      try {
+        const { findFace, faceCropRect } = await import("./face.js");
+        const hit = await findFace(src.bitmap, { width: src.width, height: src.height });
+        if (!hit) {
+          toast("얼굴을 자동으로 찾지 못했습니다. 직접 맞춰 주세요.", "err");
+          return;
+        }
+        if (hit.deg) {                       // 누워 있으면 먼저 세웁니다
+          const turns = hit.deg === 270 ? [-1] : hit.deg === 180 ? [1, 1] : [1];
+          for (const d of turns) rotate(d);
+        }
+        const r = faceCropRect(hit);
+        z = V / r.size;
+        tx = -r.x * z; ty = -r.y * z;
+        apply();
+        toast(hit.count > 1 ? `얼굴 ${hit.count}명 중 가장 큰 얼굴에 맞췄습니다.` : "얼굴에 맞췄습니다.");
+      } catch (err) {
+        console.error(err);
+        toast("얼굴 찾기를 준비하지 못했습니다.", "err");
+      } finally { btn.disabled = false; btn.textContent = label; }
+    });
+
+    wrap.querySelector("#zIn").addEventListener("click", () => setZoom(z * 1.2));
+    wrap.querySelector("#zOut").addEventListener("click", () => setZoom(z / 1.2));
+    wrap.querySelector("#zFit").addEventListener("click", fitAll);
     wrap.querySelector("#rotL").addEventListener("click", () => rotate(-1));
     wrap.querySelector("#rotR").addEventListener("click", () => rotate(1));
-    wrap.querySelector("#cropAll").addEventListener("click", () => {
-      fs = Math.min(dw, dh); fx = (dw - fs) / 2; fy = (dh - fs) / 2; draw();
-    });
-    wrap.querySelector("#cropSquare").addEventListener("click", () => {
-      fs = Math.round(Math.min(dw, dh) * 0.7); fx = (dw - fs) / 2; fy = (dh - fs) / 2; draw();
-    });
+
+    // ── 퍼센트를 눌러 직접 적기 ──
+    const editPct = () => {
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.className = "zpct-input";
+      inp.value = String(Math.round((z / fitZ) * 100));
+      inp.min = "100"; inp.max = String(MAXZ * 100); inp.step = "10";
+      // Enter 로 확정하면 곧바로 blur 도 일어나므로, 한 번만 되돌리도록 잠급니다
+      let closed = false;
+      const back = () => {
+        if (closed) return;
+        closed = true;
+        inp.replaceWith(pctEl);
+        apply();
+      };
+      const commit = () => {
+        if (closed) return;
+        const v = Number(inp.value);
+        if (Number.isFinite(v) && v > 0) setZoom(fitZ * (v / 100));
+        back();
+      };
+      inp.addEventListener("blur", commit);
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); commit(); }
+        if (e.key === "Escape") { e.preventDefault(); back(); }
+      });
+      pctEl.replaceWith(inp);
+      inp.focus(); inp.select();
+    };
+    pctEl.addEventListener("click", editPct);
 
     const close = modal({
       title: "사진 자르기", narrow: true, body: wrap,
@@ -404,7 +473,8 @@ export async function cropImage(file, { size = 400, quality = 0.85 } = {}) {
           cv.width = cv.height = size;
           const ctx = cv.getContext("2d");
           ctx.imageSmoothingQuality = "high";
-          ctx.drawImage(src.bitmap, fx / scale, fy / scale, fs / scale, fs / scale, 0, 0, size, size);
+          // 지금 네모 안에 보이는 부분이 그대로 사진이 됩니다
+          ctx.drawImage(src.bitmap, -tx / z, -ty / z, V / z, V / z, 0, 0, size, size);
           cv.toBlob((blob) => {
             done = true; releaseOriginal?.(); close(); resolve(blob || null);
           }, "image/jpeg", quality);

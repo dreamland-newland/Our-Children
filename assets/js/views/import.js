@@ -20,10 +20,10 @@ let photoAsTeacher = false;
 // ── 양식 파일 — 세 시트를 담은 한 파일. «전체» 또는 시트 하나만 받을 수 있습니다 ──
 const TEMPLATE_FILE = "./assets/templates/import-template.xlsx";
 const TEMPLATE_SHEETS = [
-  { key: null,          label: "전체 (세 시트 모두)", desc: "학생명단 · 셀편성 · 교사간사연락처" },
-  { key: "학생명단",     label: "학생명단만",         desc: "주소록에 올릴 아이들 정보" },
-  { key: "셀편성",       label: "셀편성만",           desc: "셀별 담당 · 아이 배정" },
-  { key: "교사간사연락처", label: "교사간사연락처만",   desc: "교사·간사 연락처" },
+  { key: null,          label: "전체",           desc: "세 시트 모두 — 학생명단 · 셀편성 · 교사간사연락처" },
+  { key: "학생명단",     label: "학생명단만",      desc: "주소록에 올릴 아이들 정보" },
+  { key: "셀편성",       label: "셀편성만",        desc: "셀별 담당 · 아이 배정" },
+  { key: "교사간사연락처", label: "교사간사연락처만", desc: "교사·간사 연락처" },
 ];
 
 // ── 헤더 별칭 사전 ────────────────────────────────────────
@@ -481,10 +481,16 @@ export function html() {
     <input type="file" id="file" accept=".xlsx,.xls,.csv" multiple style="display:none">
   </div>
 
-  <label class="chk" style="margin-top:10px">
-    <input type="checkbox" id="photoIsTeacher">
-    <span>함께 놓은 사진 대장은 학생이 아니라 <b>교사·간사</b> 사진입니다</span>
-  </label>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+    <label class="chk">
+      <input type="checkbox" id="photoIsTeacher">
+      <span>함께 놓은 사진 대장은 학생이 아니라 <b>교사·간사</b> 사진입니다</span>
+    </label>
+    <label class="chk">
+      <input type="checkbox" id="photoAutoFace" checked>
+      <span><b>얼굴을 찾아 자동으로 맞추기</b> (누운 사진은 세워서)</span>
+    </label>
+  </div>
 
   <div id="photoResult" style="margin-top:14px"></div>
 
@@ -543,12 +549,14 @@ export function mount(root, rerender) {
   // ── 양식 파일 받기 — 마우스를 대면(또는 눌러서) 시트 하나만 골라 받을 수 있습니다
   const tplBtn = root.querySelector("#tplBtn");
   let tplClose = null;
-  const toggleTplMenu = () => {
-    if (tplClose) { tplClose(); tplClose = null; return; }
+  //  마우스를 대면 열리고, 눌러도 열립니다(휴대폰). 이미 열려 있으면 그대로 두고,
+  //  바깥을 누르거나 Esc 로 닫습니다 — 대고 나서 누르면 닫혀 버리는 일이 없도록.
+  const openTplMenu = () => {
+    if (tplClose) return;
     tplClose = openTemplateMenu(tplBtn, () => { tplClose = null; });
   };
-  tplBtn?.addEventListener("mouseenter", () => { if (!tplClose) tplClose = openTemplateMenu(tplBtn, () => { tplClose = null; }); });
-  tplBtn?.addEventListener("click", (e) => { e.preventDefault(); toggleTplMenu(); });
+  tplBtn?.addEventListener("mouseenter", openTplMenu);
+  tplBtn?.addEventListener("click", (e) => { e.preventDefault(); openTplMenu(); });
 }
 
 /** 여러 파일을 한 번에 받습니다 — 명부 양식이면 «가져오기» 로, 사진 대장이면 «사진 꺼내기» 로 알아서 나눕니다 */
@@ -617,12 +625,13 @@ async function handleFiles(fileList, root, rerender) {
 function openTemplateMenu(btn, onClose) {
   document.querySelector(".hpop")?.remove();
   const pop = document.createElement("div");
-  pop.className = "hpop";
+  pop.className = "hpop tpl-pop";
   pop.innerHTML = `
     <div class="hpop-head">받으실 양식을 골라 주세요</div>
     <div class="hpop-list">
       ${TEMPLATE_SHEETS.map((s) => `
-      <button class="hpop-item" data-tpl="${esc(s.key || "")}">${esc(s.label)}<span>${esc(s.desc)}</span></button>`).join("")}
+      <button class="hpop-item" data-tpl="${esc(s.key || "")}">
+        <b>${esc(s.label)}</b><span>${esc(s.desc)}</span></button>`).join("")}
     </div>`;
   document.body.appendChild(pop);
   const r = btn.getBoundingClientRect();
@@ -788,15 +797,24 @@ async function applyPhotos(root, rerender) {
     { danger: false, okText: "올리기" }))) return;
 
   const btn = root.querySelector("#applyPhotos");
-  let ok = 0, fail = 0;
+  const autoFace = !!root.querySelector("#photoAutoFace")?.checked;
+  let autoCrop = null;
+  if (autoFace) {
+    try { ({ autoFaceCrop: autoCrop } = await import("../face.js")); }
+    catch (e) { console.error(e); }        // 준비가 안 되면 그냥 통째로 올립니다
+  }
+
+  let ok = 0, fail = 0, faced = 0;
   for (let i = 0; i < todo.length; i++) {
     if (btn) btn.textContent = `올리는 중… (${i + 1}/${todo.length})`;
     try {
-      // 자르지 않고 «통째로» 올립니다 — 동그란 사진에는 가운데가 보이고,
-      // 나중에 주소록·교사간사 편집 창의 «다시 자르기» 로 원하는 부분을 고를 수 있습니다.
-      const shrunk = await fitImage(todo[i].blob, 900, 0.85);
-      if (photoAsTeacher) await api.uploadTeacherPhoto(todo[i].chosenId, shrunk);
-      else await api.uploadPhoto(todo[i].chosenId, shrunk);
+      // 1) 얼굴이 «한 명만» 또렷하게 잡히면 그 얼굴에 맞춰 자릅니다 (누운 사진은 세워서).
+      // 2) 못 찾거나 여러 명이면 자르지 않고 통째로 — 나중에 «다시 자르기» 로 고르시면 됩니다.
+      let out = null;
+      if (autoCrop) { out = await autoCrop(todo[i].blob); if (out) faced++; }
+      if (!out) out = await fitImage(todo[i].blob, 900, 0.85);
+      if (photoAsTeacher) await api.uploadTeacherPhoto(todo[i].chosenId, out);
+      else await api.uploadPhoto(todo[i].chosenId, out);
       ok++;
     } catch (e) { console.error(e); fail++; }
   }
@@ -804,7 +822,9 @@ async function applyPhotos(root, rerender) {
   photoRows = [];
   const res = root.querySelector("#photoResult");
   if (res) res.innerHTML = "";
-  toast(fail ? `${ok}장을 올렸습니다. ${fail}장은 올리지 못했습니다.` : `${ok}장을 올렸습니다.`, fail ? "err" : "");
+  const faceNote = autoFace && ok ? ` (얼굴을 찾아 맞춘 사진 ${faced}장)` : "";
+  toast(fail ? `${ok}장을 올렸습니다${faceNote}. ${fail}장은 올리지 못했습니다.`
+             : `${ok}장을 올렸습니다${faceNote}.`, fail ? "err" : "");
   rerender();
 }
 
