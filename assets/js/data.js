@@ -349,6 +349,20 @@ const supabaseAdapter = {
     return error ? true : data;
   },
 
+  /** 아이디·비밀번호를 잊었을 때 — 이름+휴대폰번호로 «내 계정» 찾기 */
+  async findMyAccounts(name, phone) {
+    const { data, error } = await sb.rpc("find_my_accounts", { p_name: name, p_phone: phone });
+    if (error) throw new Error(translate(error.message));
+    return data || [];
+  },
+  /** 찾은 계정에 새 비밀번호를 걸어 줍니다 */
+  async resetPassword({ name, phone, username, password }) {
+    const { error } = await sb.rpc("reset_my_password", {
+      p_name: name, p_phone: phone, p_username: username, p_new_password: password,
+    });
+    if (error) throw new Error(translate(error.message));
+  },
+
   /** 가입 «신청». 첫 계정만 바로 열리고, 나머지는 관리자 승인을 기다립니다. */
   async signUp({ username, password, name, phone, teacherId }) {
     const { error } = await sb.auth.signUp({
@@ -606,6 +620,33 @@ const demoAdapter = {
     return !demo.accounts.some((a) => a.username.toLowerCase() === u.toLowerCase());
   },
 
+  /** 이름+휴대폰번호가 맞는 계정 (계정에 적은 번호나, 명부에 적힌 번호 둘 중 하나만 맞으면 됩니다) */
+  _myAccounts(name, phone) {
+    if (!nameKey(name) || phoneKey(phone).length < 8) return [];
+    return demo.accounts.filter((a) => {
+      if (nameKey(a.name) !== nameKey(name)) return false;
+      const t = demo.teachers.find((x) => x.id === a.teacher_id);
+      return phoneKey(a.phone) === phoneKey(phone)
+          || (t && phoneKey(t.phone) === phoneKey(phone));
+    });
+  },
+  async findMyAccounts(name, phone) {
+    return this._myAccounts(name, phone).map((a) => {
+      const t = demo.teachers.find((x) => x.id === a.teacher_id);
+      return { username: a.username, name: a.name, role: t?.role || "명부 밖",
+               approved: a.approved !== false, created_at: a.created_at };
+    });
+  },
+  async resetPassword({ name, phone, username, password }) {
+    if (String(password || "").length < 6) throw new Error("비밀번호는 6자 이상이어야 합니다.");
+    const acc = this._myAccounts(name, phone)
+      .find((a) => a.username.toLowerCase() === String(username || "").trim().toLowerCase());
+    if (!acc) throw new Error("이름·휴대폰번호·아이디가 맞지 않습니다. 관리자에게 문의해 주세요.");
+    if (acc.approved === false) throw new Error("아직 승인 전인 계정입니다. 관리자(간사)에게 문의해 주세요.");
+    acc.pw = await sha256(password);
+    this.persist();
+  },
+
   async listAccounts() {
     if (!state.profile) throw new Error("로그인이 필요합니다.");
     const admin = !!state.profile.is_admin;
@@ -841,6 +882,8 @@ export const api = {
   findTeacherCandidates: (n, p) => adapter.findTeacherCandidates(n, p),
   usernameAvailable: (u) => adapter.usernameAvailable(u),
   signUp: (o) => adapter.signUp(o),
+  findMyAccounts: (n, p) => adapter.findMyAccounts(n, p),
+  resetPassword: (o) => adapter.resetPassword(o),
   listAccounts: () => adapter.listAccounts(),
   setAdmin: (id, v) => adapter.setAdmin(id, v),
   revokeAccount: (id) => adapter.revokeAccount(id),

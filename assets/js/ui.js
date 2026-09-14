@@ -298,14 +298,17 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
   const releaseOriginal = src.release;           // 창을 닫을 때 원본 비트맵을 놓아 줍니다
 
   return new Promise((resolve) => {
-    // 자를 네모(=보이는 창)의 크기. 이 안에 담긴 만큼이 프로필 사진이 됩니다.
-    const V = Math.round(Math.min(320, Math.max(200, window.innerWidth * 0.66)));
+    // 자를 네모(=보이는 창)의 크기. PC 는 넉넉하게, 휴대폰은 화면 폭에 꽉 차게.
+    const wide = window.innerWidth >= 720;
+    const V = wide ? 420
+      : Math.round(Math.max(240, Math.min(window.innerWidth - 40, window.innerHeight * 0.9 - 320, 460)));
     const MAXZ = 12;                    // 최대 12배까지 당길 수 있습니다
     let fitZ = 1;                       // 사진이 네모를 꼭 채우는 배율 (= 100%)
     let z = 1, tx = 0, ty = 0;          // 지금 배율과 사진의 위치
     let done = false;
 
     const wrap = document.createElement("div");
+    wrap.className = "crop-wrap";
     wrap.innerHTML = `
       <div class="crop-stage">
         <div class="crop-view" id="cropView" style="width:${V}px;height:${V}px">
@@ -313,28 +316,46 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
           <div class="crop-guide"></div>
         </div>
       </div>
-      <div class="crop-tools">
-        <button type="button" class="btn btn-sm btn-primary" id="findFace"
-          title="사진에서 얼굴을 찾아 자동으로 맞춥니다">🙂 얼굴 맞추기</button>
-        <button type="button" class="btn btn-sm" id="rotL" title="왼쪽으로 90° 돌리기">↺ 왼쪽</button>
-        <button type="button" class="btn btn-sm" id="rotR" title="오른쪽으로 90° 돌리기">↻ 오른쪽</button>
-        <span class="zoomer">
-          <button type="button" id="zOut" title="줄이기" aria-label="줄이기">−</button>
-          <button type="button" class="zpct" id="zPct" title="눌러서 직접 적기">100%</button>
-          <button type="button" id="zIn" title="키우기" aria-label="키우기">＋</button>
-        </span>
-        <button type="button" class="btn btn-sm" id="zFit">처음 크기</button>
-      </div>
-      <div class="form-note" style="margin-top:12px">
-        <b>동그라미 안</b>이 프로필 사진이 됩니다. 사진을 <b>끌어서</b> 옮기고,
-        <b>＋ −</b> 로 키우거나 줄이세요. 퍼센트를 누르면 <b>직접 적을 수</b> 있습니다.
-        <div style="margin-top:4px;color:var(--text-muted)">
-          컴퓨터는 <b>Ctrl(⌘)+휠</b>, 휴대폰은 <b>두 손가락</b>으로도 됩니다.
+      <div class="crop-panel">
+        <button type="button" class="btn btn-primary btn-block crop-face" id="findFace">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+               stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 8V5.5A2.5 2.5 0 0 1 5.5 3H8M16 3h2.5A2.5 2.5 0 0 1 21 5.5V8"/>
+            <path d="M21 16v2.5a2.5 2.5 0 0 1-2.5 2.5H16M8 21H5.5A2.5 2.5 0 0 1 3 18.5V16"/>
+            <circle cx="12" cy="10.4" r="2.5"/>
+            <path d="M7.6 17.2a4.9 4.9 0 0 1 8.8 0"/>
+          </svg><span>얼굴 맞추기</span></button>
+
+        <div class="seg seg-2 crop-rot" role="group" aria-label="돌리기">
+          <button type="button" class="seg-btn" id="rotL" aria-label="왼쪽으로 돌리기">↺<span class="rot-t"> 왼쪽</span></button>
+          <button type="button" class="seg-btn" id="rotR" aria-label="오른쪽으로 돌리기">↻<span class="rot-t"> 오른쪽</span></button>
+        </div>
+
+        <div class="crop-zoom">
+          <div class="cz-head">
+            <span>크기</span>
+            <button type="button" class="zpct" id="zPct" title="눌러서 직접 적기">100%</button>
+          </div>
+          <div class="cz-row">
+            <button type="button" class="cz-step" id="zOut" aria-label="줄이기">−</button>
+            <input type="range" class="cz-slider" id="zRange" min="100" max="${MAXZ * 100}" value="100" step="1"
+                   aria-label="사진 크기">
+            <button type="button" class="cz-step" id="zIn" aria-label="키우기">＋</button>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm btn-block" id="zFit">처음 크기로</button>
+        </div>
+
+        <div class="crop-hint">
+          <b>동그라미 안</b>이 프로필 사진이 됩니다. 사진을 <b>끌어서</b> 옮기고,
+          슬라이더로 키우거나 줄이세요.
+          <div class="dim">퍼센트를 누르면 직접 적을 수 있습니다 ·
+            컴퓨터 <b>Ctrl(⌘)+휠</b> · 휴대폰 <b>두 손가락</b></div>
         </div>
       </div>`;
 
     const view = wrap.querySelector("#cropView");
     const imgEl = wrap.querySelector("#cropImg");
+    const rangeEl = wrap.querySelector("#zRange");
     let pctEl = wrap.querySelector("#zPct");
 
     /** 사진이 네모를 늘 덮도록 위치를 붙잡아 둡니다 (빈 곳이 생기지 않게) */
@@ -348,7 +369,9 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
     const apply = () => {
       clamp();
       imgEl.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`;
-      pctEl.textContent = `${Math.round((z / fitZ) * 100)}%`;
+      const pct = Math.round((z / fitZ) * 100);
+      pctEl.textContent = `${pct}%`;
+      if (rangeEl && document.activeElement !== rangeEl) rangeEl.value = String(Math.min(MAXZ * 100, pct));
       // 원본 픽셀이 모자라기 시작하면 («더 키우면 흐려집니다») 퍼센트를 주황으로
       const soft = srcPixels() < PHOTO_SOFT;
       pctEl.classList.toggle("soft", soft);
@@ -462,6 +485,7 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
       } finally { btn.disabled = false; btn.textContent = label; }
     });
 
+    rangeEl.addEventListener("input", () => setZoom(fitZ * (Number(rangeEl.value) / 100)));
     wrap.querySelector("#zIn").addEventListener("click", () => setZoom(z * 1.2));
     wrap.querySelector("#zOut").addEventListener("click", () => setZoom(z / 1.2));
     wrap.querySelector("#zFit").addEventListener("click", fitAll);
@@ -500,7 +524,7 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
     pctEl.addEventListener("click", editPct);
 
     const close = modal({
-      title: "사진 자르기", narrow: true, body: wrap,
+      title: "사진 자르기", wide: true, body: wrap,
       footer: `<button class="btn" data-close>취소</button>
                <button class="btn btn-primary" id="cropOk">적용</button>`,
       onMount(box) {

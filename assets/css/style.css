@@ -97,16 +97,110 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
 .nav a:hover { background: var(--surface-2); color: var(--text-primary); }
 .nav a.active { background: var(--text-primary); color: var(--surface); font-weight: 600; }
 
-.topbar-right { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.topbar-right { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
 .auth-slot { display: flex; align-items: center; gap: 8px; }
-.whoami { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+/* 상단바 오른쪽 «내 프로필» 단추 — 누르면 계정 차림표가 열립니다 */
+.whoami {
+  display: flex; align-items: center; gap: 8px; font: inherit; font-size: 13px;
+  color: inherit; text-align: left; cursor: pointer;
+  border: 1px solid transparent; background: none;
+  padding: 4px 8px 4px 4px; border-radius: 999px;
+  transition: background .15s ease, border-color .15s ease;
+}
+.whoami:hover { background: var(--surface-2); border-color: var(--border); }
+.whoami[aria-expanded="true"] { background: var(--surface-2); border-color: var(--border-strong); }
+.whoami .ava { box-shadow: 0 0 0 1px var(--border) inset; }
 .who-text { display: flex; flex-direction: column; line-height: 1.25; }
 .who-text b { font-size: 13px; font-weight: 620; white-space: nowrap; }
 .who-text small { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-@media (max-width: 980px) { .who-text { display: none; } }
+.who-chev {
+  width: 15px; height: 15px; flex: none; fill: none; stroke: var(--text-muted);
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  transition: transform .18s cubic-bezier(.2,.8,.3,1);
+}
+.whoami[aria-expanded="true"] .who-chev { transform: rotate(180deg); }
+@media (max-width: 980px) { .who-text, .who-chev { display: none; } .whoami { padding: 4px; } }
 .avatar {
   width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
   background: var(--series-1); color: #fff; font-size: 12px; font-weight: 700;
+}
+
+/* ── 계정 차림표 ─────────────────────────────────────────
+   iOS 의 «길게 누르기» 차림표처럼 — 얇은 줄, 반투명 유리, 뒤는 살짝 어둡게. */
+.me-scrim {
+  position: fixed; inset: 0; z-index: 75; display: none;
+  background: rgba(0, 0, 0, .22);
+  -webkit-backdrop-filter: saturate(120%) blur(2px);
+  backdrop-filter: saturate(120%) blur(2px);
+  animation: meFade .18s ease both;
+}
+@keyframes meFade { from { opacity: 0 } }
+
+.me-pop {
+  min-width: 244px; max-width: 268px; padding: 5px;
+  border-radius: 16px; border-color: var(--border);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .16), 0 1px 3px rgba(0, 0, 0, .06);
+  transform-origin: top right;
+  animation: mePop .17s cubic-bezier(.2, .9, .3, 1) both;
+}
+@keyframes mePop { from { opacity: 0; transform: scale(.94) translateY(-4px) } }
+/* 반투명을 지원하지 않는 브라우저에서는 그냥 불투명하게 */
+@supports not (backdrop-filter: blur(1px)) { .me-pop { background: var(--surface); } }
+
+.me-card { display: flex; align-items: center; gap: 10px; padding: 8px 9px 10px; }
+.me-card .ava { flex: none; box-shadow: 0 0 0 1px var(--border) inset; }
+.me-id { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.me-id b { font-size: 13.5px; font-weight: 640; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.me-id small { font-size: 11px; color: var(--text-muted); }
+.me-role { font-weight: 500; color: var(--text-secondary); }
+.me-badge {
+  margin-left: auto; flex: none; align-self: center;
+  font-size: 10px; font-weight: 650; padding: 2px 7px; border-radius: 999px;
+  background: var(--series-1-soft); color: var(--series-1);
+}
+
+/* 줄 사이 칸막이 — 머리카락처럼 얇게 */
+.me-sep { height: 1px; margin: 3px 9px; background: color-mix(in srgb, var(--border) 80%, transparent); }
+
+.me-item {
+  justify-content: flex-start; align-items: center; gap: 10px;
+  padding: 7px 9px; border-radius: 10px;
+}
+.me-item:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.me-item:active { background: color-mix(in srgb, var(--text-primary) 10%, transparent); }
+.me-item svg {
+  width: 17px; height: 17px; flex: none; fill: none; stroke: var(--text-secondary);
+  stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+}
+.me-item div { flex: 1 1 auto; display: flex; flex-direction: column; gap: 0; min-width: 0; text-align: left; }
+.me-item b { font-size: 13px; font-weight: 560; letter-spacing: -.1px; }
+.me-item span { font-size: 11px; color: var(--text-muted); white-space: normal; line-height: 1.35; }
+.me-item:hover svg { stroke: var(--text-primary); }
+.me-out b { color: var(--critical); }
+.me-out svg, .me-out:hover svg { stroke: var(--critical); }
+
+/* 차림표 맨 아래 «화면 모드» 알약 (휴대폰에서만 보입니다) */
+.me-theme { display: none; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 9px 4px; }
+.me-theme > span { font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
+.theme-seg-wide { display: flex; flex: 1 1 auto; max-width: 132px; }
+.theme-seg-wide button { width: auto; flex: 1 1 0; }
+
+/* 휴대폰 — 뒤를 흐리게 깔고, 설명 줄은 접어 «한 줄짜리» 로 */
+@media (max-width: 640px) {
+  .me-scrim { display: block; }
+  .me-pop {
+    min-width: 0; width: min(258px, calc(100vw - 20px));
+    background: color-mix(in srgb, var(--surface) 72%, transparent);
+  }
+  .me-item { padding: 9px; }
+  .me-item span { display: none; }
+  .me-card { padding: 7px 9px 9px; }
+  /* 화면 모드는 상단바에서 빼고 프로필 차림표 안으로 옮깁니다 */
+  #themeSeg { display: none; }
+  .me-theme { display: flex; }
 }
 
 /* ── 배너 ──────────────────────────────────────────────── */
@@ -502,7 +596,7 @@ table.data .num { font-variant-numeric: tabular-nums; color: var(--text-secondar
   animation: pop .16s cubic-bezier(.2,.8,.3,1);
 }
 .modal.narrow { width: min(430px, 100%); }
-.modal.wide { width: min(760px, 100%); }
+.modal.wide { width: min(860px, 100%); }
 @keyframes pop { from { transform: translateY(8px) scale(.99); opacity: 0 } }
 .modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .modal-head h3 { font-size: 16px; }
@@ -776,10 +870,13 @@ a.tel { color: var(--series-1); }
 }
 
 /* ── 사진 자르기 창 (동그라미 안이 프로필 사진) ───────────── */
-.crop-stage { display: grid; place-items: center; padding: 2px 0 12px; }
+/*   PC: 왼쪽 사진 · 오른쪽 조작판   |   휴대폰: 위 사진 · 아래 조작판   */
+.crop-wrap { display: flex; gap: 22px; align-items: stretch; }
+.crop-stage { display: grid; place-items: center; flex: 0 0 auto; }
 .crop-view {
-  position: relative; overflow: hidden; border-radius: 14px;
+  position: relative; overflow: hidden; border-radius: 20px;
   background: var(--surface-2); touch-action: none; user-select: none; cursor: grab;
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 .crop-view:active { cursor: grabbing; }
 .crop-view img {
@@ -792,31 +889,85 @@ a.tel { color: var(--series-1); }
   border: 1.5px solid rgba(255, 255, 255, .92);
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, .40);
 }
-.crop-tools {
-  display: flex; gap: 8px; justify-content: center; align-items: center;
-  margin-top: 12px; flex-wrap: wrap;
+
+/* 오른쪽(또는 아래) 조작판 */
+.crop-panel { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+.crop-panel .btn-block { width: 100%; justify-content: center; }
+
+/* 돌리기 — 두 칸짜리 세그먼트 */
+.seg.seg-2 { display: flex; width: 100%; }
+.seg.seg-2 .seg-btn { flex: 1; padding: 9px 0; }
+
+/* 크기 조절 묶음 */
+.crop-zoom {
+  border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px 10px;
+  background: var(--surface-2); display: flex; flex-direction: column; gap: 8px;
 }
-/* − 100% + 묶음 */
-.zoomer {
-  display: inline-flex; align-items: center; overflow: hidden;
-  border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface);
+.cz-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12.5px; font-weight: 600; color: var(--text-secondary);
 }
-.zoomer button {
-  border: 0; background: none; font: inherit; cursor: pointer; color: var(--text-primary);
-  padding: 6px 13px; min-height: 32px; line-height: 1;
+.zpct {
+  border: 0; border-radius: 999px; padding: 4px 12px; cursor: pointer; font: inherit;
+  font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums;
+  background: var(--surface); color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
-.zoomer button:hover { background: var(--surface-2); }
-.zoomer .zpct {
-  min-width: 66px; font-size: 13px; font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  border-left: 1px solid var(--border); border-right: 1px solid var(--border);
-}
+.zpct:hover { background: var(--page); }
 /* 원본 픽셀이 모자라기 시작하면 («더 키우면 흐려집니다») 주황으로 알려 줍니다 */
-.zoomer .zpct.soft { color: var(--series-2); }
-.zoomer .zpct.soft::after { content: " ⚠"; font-size: 11px; }
+.zpct.soft { color: var(--series-2); }
+.zpct.soft::after { content: " ⚠"; font-size: 11px; }
 .zpct-input {
-  width: 74px; text-align: center; font-variant-numeric: tabular-nums;
-  padding: 5px 8px; font-size: 13px;
+  width: 84px; text-align: center; font-variant-numeric: tabular-nums;
+  padding: 4px 8px; font-size: 13px;
+}
+.cz-row { display: flex; align-items: center; gap: 10px; }
+.cz-step {
+  flex: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+  border: 0; background: var(--surface); color: var(--text-primary);
+  font: inherit; font-size: 16px; line-height: 1; display: grid; place-items: center;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.cz-step:hover { background: var(--page); }
+.cz-step:active { transform: scale(.94); }
+
+/* iOS 느낌의 얇은 슬라이더 */
+.cz-slider {
+  flex: 1; min-width: 0; height: 28px; padding: 0; margin: 0;
+  background: none; -webkit-appearance: none; appearance: none; cursor: pointer;
+}
+.cz-slider::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 999px; background: var(--grid);
+}
+.cz-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 22px; height: 22px; margin-top: -9px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.28), 0 0 0 .5px rgba(0,0,0,.06);
+}
+.cz-slider::-moz-range-track { height: 4px; border-radius: 999px; background: var(--grid); }
+.cz-slider::-moz-range-thumb {
+  width: 22px; height: 22px; border: 0; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.28);
+}
+.cz-slider:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
+.crop-hint { font-size: 12.5px; color: var(--text-secondary); line-height: 1.55; }
+.crop-hint .dim { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; }
+
+.crop-face { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.crop-face svg { flex: none; }
+
+/* 좁은 화면 — 사진 위, 조작판 아래로 (버튼은 한 줄에 나란히 두어 사진을 크게 씁니다) */
+@media (max-width: 719px) {
+  .crop-wrap { flex-direction: column; gap: 12px; align-items: stretch; }
+  .crop-stage { width: 100%; }
+  .crop-hint { display: none; }              /* 좁을 땐 안내문 대신 화면을 넓게 */
+  .crop-panel { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; }
+  .crop-face { grid-column: 1; }
+  .crop-rot { grid-column: 2; width: auto; }
+  .crop-rot .seg-btn { flex: none; width: 46px; padding: 9px 0; font-size: 17px; }
+  .rot-t { display: none; }   /* 좁을 땐 화살표만 — 글자가 두 줄로 깨지지 않게 */
+  .crop-zoom { grid-column: 1 / -1; }
 }
 
 /* ── 홈 화면에 추가 안내 배너 ───────────────────────────── */

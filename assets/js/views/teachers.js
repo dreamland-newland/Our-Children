@@ -183,7 +183,7 @@ export function mount(root, rerender) {
 //  «설정» 한 곳에 모아 두고, 왼쪽 목록에서 골라 보는 방식으로 묶었습니다.
 // ════════════════════════════════════════════════════════════
 const SETTINGS_SECTIONS = [
-  { key: "accounts", icon: "👥", label: "가입 승인 · 계정", desc: "새 신청 승인 · 관리자 지정 · 계정 해제",
+  { key: "accounts", icon: "👥", label: "가입 승인 · 계정", desc: "새 신청 승인 · 관리자 지정 · 계정 삭제",
     render: paneAccounts, badge: () => state.pendingCount || 0 },
   { key: "signup",   icon: "🔐", label: "가입 신청 설정",   desc: "신청을 받을지 말지", render: paneSignup },
   { key: "notify",   icon: "🔔", label: "알림 설정",        desc: "가입 신청 메일 받을 주소", render: paneNotify },
@@ -192,7 +192,7 @@ const SETTINGS_SECTIONS = [
 
 const isPhone = () => window.matchMedia("(max-width: 640px)").matches;
 
-function openAdminSettings(after, initial = "accounts") {
+export function openAdminSettings(after, initial = "accounts") {
   //  · PC   — 왼쪽 목록 + 오른쪽 내용 (맥 설정처럼)
   //  · 휴대폰 — 먼저 목록만 보여 주고, 하나를 누르면 그 화면으로 들어갑니다 (아이폰 설정처럼)
   const phone = isPhone();
@@ -522,15 +522,18 @@ async function paneAccounts(pane, after) {
               ? `<button class="btn btn-sm" data-demote="${r.id}"
                    ${admins <= 1 ? "disabled title='마지막 관리자입니다'" : ""}>관리자 내리기</button>`
               : `<button class="btn btn-sm btn-primary" data-promote="${r.id}">관리자로</button>`}
-            <button class="btn btn-sm btn-danger" data-revoke="${r.id}">계정 해제</button>
+            <button class="btn btn-sm btn-danger" data-revoke="${r.id}"
+              title="로그인 계정을 지웁니다 (교적 자료는 그대로 남습니다)">계정 삭제</button>
           </div>
         </div>`).join("")}
       </div>
       <div class="hintbox" style="margin-top:10px;font-size:12px;color:var(--text-muted)">
         가운데 칸에서 <b>명부 연결</b>을 언제든 바꿀 수 있습니다. 연결된 분만 교사·간사 명단과
         생일명단에 나옵니다.<br>
-        «계정 해제»·«거절» 은 로그인 권한만 거둡니다. 교적 자료는 그대로 남고,
-        같은 아이디로 다시 신청할 수 있습니다.
+        <b>«계정 삭제»</b> 는 그분의 <b>로그인 계정만</b> 지웁니다 — 교사·간사 명부, 사진, 아이들 자료는
+        하나도 건드리지 않습니다. 지운 뒤에는 <b>같은 아이디로 다시 가입 신청</b>할 수 있습니다.<br>
+        비밀번호만 잊으신 거라면 지우지 마시고, 로그인 화면의
+        <b>«아이디·비밀번호를 잊으셨나요?»</b> 로 본인이 바꾸시게 하면 됩니다.
       </div>`;
     bind();
   };
@@ -587,13 +590,13 @@ async function paneAccounts(pane, after) {
     }));
     pane.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
       const r = rows.find((x) => x.id === b.dataset.revoke);
-      const word = r.approved ? "계정을 해제" : "신청을 거절";
+      const word = r.approved ? "계정을 삭제" : "신청을 거절";
       if (!(await confirmDialog(
         `${r.name} 님의 ${word}할까요? 더 이상 로그인할 수 없게 됩니다.` +
         (r.is_me ? " 본인 계정이라 바로 로그아웃됩니다." : ""),
-        { okText: r.approved ? "계정 해제" : "거절" }))) return;
+        { okText: r.approved ? "계정 삭제" : "거절" }))) return;
       act(() => api.revokeAccount(r.id),
-        `${r.name} 님의 ${r.approved ? "계정을 해제했습니다." : "신청을 거절했습니다."}`);
+        `${r.name} 님의 ${r.approved ? "계정을 삭제했습니다." : "신청을 거절했습니다."}`);
     }));
   };
 
@@ -625,7 +628,7 @@ async function paneSignup(pane) {
   });
 }
 
-export function editTeacher(t, after) {
+export function editTeacher(t, after, opts = {}) {
   const isNew = !t?.id;
   t = t || {};
   const form = document.createElement("form");
@@ -679,7 +682,7 @@ export function editTeacher(t, after) {
       이미 계정이 연결된 분입니다. 이름·휴대폰번호를 바꿔도 기존 로그인에는 영향이 없습니다.</div>` : ""}`;
 
   modal({
-    title: isNew ? "교사·간사 등록" : `${t.name} 편집`, narrow: true, body: form,
+    title: opts.title || (isNew ? "교사·간사 등록" : `${t.name} 편집`), narrow: true, body: form,
     footer: `${!isNew && !t.user_id ? '<button class="btn btn-danger" data-del>삭제</button><div style="flex:1"></div>' : ""}
              <button class="btn" data-close>취소</button>
              <button class="btn btn-primary" form="tForm" type="submit">저장</button>`,

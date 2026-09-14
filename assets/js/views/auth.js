@@ -20,7 +20,10 @@ export const login = {
             <input type="password" name="password" autocomplete="current-password" required></div>
           <button class="btn btn-primary btn-block" type="submit">로그인</button>
         </form>
-        <p style="text-align:center;margin:18px 0 0;font-size:13px;color:var(--text-secondary)">
+        <p style="text-align:center;margin:14px 0 0;font-size:13px">
+          <a href="#/forgot" style="color:var(--text-secondary)">아이디·비밀번호를 잊으셨나요?</a>
+        </p>
+        <p style="text-align:center;margin:10px 0 0;font-size:13px;color:var(--text-secondary)">
           아직 계정이 없으신가요? <a href="#/signup" style="color:var(--series-1);font-weight:600">회원가입</a>
         </p>
       </div>
@@ -282,3 +285,174 @@ export function resetSignup() {
   step = 1; picked = null; matches = []; entered = { name: "", phone: "" }; done = null;
 }
 export const signupReq = () => req;
+
+
+// ════════════════════════════════════════════════════════════
+//  아이디·비밀번호 찾기
+//  ------------------------------------------------------------
+//  이 교적부는 진짜 메일 주소를 쓰지 않아 «재설정 메일» 을 보낼 수가 없습니다.
+//  그래서 가입할 때와 똑같이 «이름 + 휴대폰번호» 로 본인을 확인하고,
+//  그 자리에서 아이디를 알려 준 뒤 새 비밀번호를 정하게 합니다.
+// ════════════════════════════════════════════════════════════
+let fStep = 1;                       // 1 본인확인 · 2 내 계정 고르기 · 3 새 비밀번호 · 4 완료
+let fEntered = { name: "", phone: "" };
+let fFound = [];
+let fPicked = null;
+
+export function resetForgot() {
+  fStep = 1; fEntered = { name: "", phone: "" }; fFound = []; fPicked = null;
+}
+
+export const forgot = {
+  html() {
+    return `
+    <div class="auth-page">
+      <div class="card card-pad">
+        <h1>아이디·비밀번호 찾기</h1>
+        <p class="lead">${fStep === 4
+          ? "새 비밀번호로 바꿨습니다."
+          : "가입할 때 적으신 <b>이름과 휴대폰번호</b>로 본인을 확인합니다."}</p>
+        ${fStep === 4 ? "" : `<div class="steps">
+          ${[1, 2, 3].map((n) => `<span class="step${fStep >= n ? " on" : ""}"></span>`).join("")}
+        </div>`}
+        <div id="err"></div>
+        <div id="stepBody">${fBody()}</div>
+        <p style="text-align:center;margin:18px 0 0;font-size:13px;color:var(--text-secondary)">
+          <a href="#/login" style="color:var(--series-1);font-weight:600">로그인 화면으로</a>
+        </p>
+      </div>
+    </div>`;
+  },
+  mount(root, rerender) { fWire(root, rerender); },
+};
+
+function fBody() {
+  if (fStep === 1) {
+    return `
+    <div class="form-note">
+      휴대폰번호는 <b>로그인해야 보이는 정보</b>라서, 이름과 번호가 모두 맞아야 넘어갑니다.
+      번호가 바뀌셨다면 관리자(간사)에게 부탁해 주세요.
+    </div>
+    <form id="fFind" class="stack" style="gap:14px">
+      <div class="field"><label>이름</label>
+        <input type="text" name="name" required placeholder="예: 홍길동" value="${esc(fEntered.name)}"></div>
+      <div class="field"><label>휴대폰번호</label>
+        <input type="tel" name="phone" required inputmode="numeric"
+               placeholder="010-0000-0000" value="${esc(fEntered.phone)}"></div>
+      <button class="btn btn-primary btn-block" type="submit">다음</button>
+    </form>`;
+  }
+
+  if (fStep === 2) {
+    return `
+    <p style="font-size:13.5px;color:var(--text-secondary);margin:0 0 12px">
+      ${fFound.length > 1
+        ? "이 이름·번호로 만든 계정이 <b>여러 개</b> 있습니다. 쓰시던 것을 골라 주세요."
+        : "계정을 찾았습니다. <b>아이디</b>를 확인하시고 다음으로 넘어가세요."}
+    </p>
+    <div id="fList">${fFound.map((a, i) => `
+      <div class="match-card">
+        <div class="avatar">${esc(String(a.name || "?").slice(-2))}</div>
+        <div class="who">
+          <b>@${esc(a.username)}</b>
+          <span class="badge ${a.role === "간사" ? "" : "blue"}">${esc(a.role || "")}</span>
+          <div>${esc(a.name)}${a.created_at ? ` · ${String(a.created_at).slice(0, 10)} 가입` : ""}</div>
+        </div>
+        ${a.approved === false
+          ? `<span class="badge warn">승인 전</span>`
+          : `<button class="btn btn-primary btn-sm" data-fpick="${i}">이걸로</button>`}
+      </div>`).join("")}</div>
+    ${fFound.every((a) => a.approved === false) ? `
+      <div class="form-note" style="margin-top:10px">아직 관리자가 승인하지 않은 신청입니다.
+        승인되면 그때 비밀번호를 정하실 수 있습니다.</div>` : ""}
+    <button class="btn btn-ghost btn-block" id="fBack" style="margin-top:10px">← 다시 입력하기</button>`;
+  }
+
+  if (fStep === 3) {
+    return `
+    <div class="form-note">
+      아이디는 <b>${esc(fPicked?.username || "")}</b> 입니다. 새 비밀번호를 정해 주세요.
+      <br>바꾸고 나면 <b>다른 기기에서는 모두 로그아웃</b>됩니다.
+    </div>
+    <form id="fSet" class="stack" style="gap:14px">
+      <input type="text" name="username" autocomplete="username" value="${esc(fPicked?.username || "")}"
+             readonly style="display:none">
+      <div class="field"><label>새 비밀번호</label>
+        <input type="password" name="password" required minlength="6"
+               autocomplete="new-password" placeholder="6자 이상"></div>
+      <div class="field"><label>새 비밀번호 확인</label>
+        <input type="password" name="password2" required minlength="6" autocomplete="new-password"></div>
+      <button class="btn btn-primary btn-block" type="submit">비밀번호 바꾸기</button>
+      <button class="btn btn-ghost btn-block" id="fBack" type="button">← 뒤로</button>
+    </form>`;
+  }
+
+  return `
+  <div class="form-note" style="margin:0 0 14px">
+    <b>${esc(fPicked?.username || "")}</b> 의 비밀번호를 바꿨습니다. 이제 로그인해 주세요.
+  </div>
+  <a class="btn btn-primary btn-block" href="#/login">로그인하러 가기</a>`;
+}
+
+function fWire(root, rerender) {
+  const redraw = () => {
+    root.querySelector("#stepBody").innerHTML = fBody();
+    root.querySelectorAll(".steps .step").forEach((el, i) => el.classList.toggle("on", fStep >= i + 1));
+    root.querySelector("#err").innerHTML = "";
+    fWire(root, rerender);
+  };
+
+  const find = root.querySelector("#fFind");
+  find?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(find).entries());
+    fEntered = { name: fd.name.trim(), phone: fd.phone.trim() };
+    if (digits(fEntered.phone).length < 10) return showErr(root, "휴대폰번호를 정확히 입력해 주세요.");
+    const btn = find.querySelector("button");
+    btn.disabled = true; btn.textContent = "찾는 중…";
+    try {
+      fFound = await api.findMyAccounts(fEntered.name, fEntered.phone);
+    } catch (err) {
+      btn.disabled = false; btn.textContent = "다음";
+      return showErr(root, err.message);
+    }
+    if (!fFound.length) {
+      btn.disabled = false; btn.textContent = "다음";
+      return showErr(root,
+        "이름과 휴대폰번호가 맞는 계정을 찾지 못했습니다. 가입할 때 적은 번호가 맞는지 확인해 주세요. "
+        + "번호가 바뀌셨다면 관리자(간사)에게 부탁하시면 바로 고쳐 드릴 수 있습니다.");
+    }
+    // 고를 것이 하나뿐이고 승인된 계정이면 바로 비밀번호 정하기로
+    const usable = fFound.filter((a) => a.approved !== false);
+    if (usable.length === 1) { fPicked = usable[0]; fStep = 3; } else fStep = 2;
+    redraw();
+  });
+
+  root.querySelectorAll("[data-fpick]").forEach((b) => b.addEventListener("click", () => {
+    fPicked = fFound[Number(b.dataset.fpick)]; fStep = 3; redraw();
+  }));
+
+  root.querySelector("#fBack")?.addEventListener("click", () => {
+    fStep = fStep === 3 && fFound.length > 1 ? 2 : 1; redraw();
+  });
+
+  const set = root.querySelector("#fSet");
+  set?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(set).entries());
+    if (fd.password !== fd.password2) return showErr(root, "비밀번호가 서로 다릅니다.");
+    const btn = set.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = "바꾸는 중…";
+    try {
+      await api.resetPassword({
+        name: fEntered.name, phone: fEntered.phone,
+        username: fPicked.username, password: fd.password,
+      });
+      fStep = 4; rerender();
+      toast("비밀번호를 바꿨습니다. 새 비밀번호로 로그인해 주세요.");
+    } catch (err) {
+      showErr(root, err.message);
+      btn.disabled = false; btn.textContent = "비밀번호 바꾸기";
+    }
+  });
+}
