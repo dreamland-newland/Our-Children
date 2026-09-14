@@ -717,8 +717,17 @@ a.tel { color: var(--series-1); }
 }
 
 /* ── 토스트 ────────────────────────────────────────────── */
-.toast-root { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 80; display: grid; gap: 8px; }
+/* 알림쪽지 — 아래에서 올라오는 창의 «저장·취소» 단추를 가리지 않게
+   --toast-lift 만큼 위로 올라갑니다 (ui.js 가 재서 넣어 줍니다).
+   눌러도 쪽지가 아니라 «그 아래 단추» 가 눌리도록 pointer-events 는 꺼 둡니다. */
+.toast-root {
+  position: fixed; bottom: calc(22px + var(--toast-lift, 0px)); left: 50%;
+  transform: translateX(-50%); z-index: 80; display: grid; gap: 8px;
+  pointer-events: none;
+  transition: bottom .22s cubic-bezier(.2, .8, .3, 1);
+}
 .toast {
+  pointer-events: none;
   background: var(--text-primary); color: var(--surface); padding: 10px 16px;
   border-radius: 999px; font-size: 13.5px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
   animation: rise .18s cubic-bezier(.2,.8,.3,1);
@@ -825,7 +834,10 @@ a.tel { color: var(--series-1); }
   .face-grid-lg { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
   .import-sum { grid-template-columns: 1fr; }
   .footer { padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px)); }
-  .toast-root { bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: calc(100% - 32px); }
+  .toast-root {
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px) + var(--toast-lift, 0px));
+    width: calc(100% - 32px);
+  }
   .toast { text-align: center; }
 }
 

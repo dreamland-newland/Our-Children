@@ -104,10 +104,27 @@ export function birthMD(row) {
 /** 토스트 */
 export function toast(msg, kind = "") {
   const root = document.getElementById("toastRoot");
+  liftToast();
   const t = h("div", { class: "toast " + kind }, esc(msg));
   root.appendChild(t);
   setTimeout(() => { t.style.transition = "opacity .25s"; t.style.opacity = "0"; }, 2400);
   setTimeout(() => t.remove(), 2750);
+}
+
+/** 알림쪽지가 «저장·취소» 단추를 가리지 않도록 그만큼 위로 띄웁니다.
+ *  (휴대폰에서 창이 아래에서 올라오면 단추도 화면 맨 아래에 붙습니다) */
+export function liftToast() {
+  const root = document.getElementById("toastRoot");
+  if (!root) return;
+  const near = (el) => {
+    if (!el || !el.offsetHeight) return 0;
+    const r = el.getBoundingClientRect();
+    // 화면 맨 아래에 붙어 있을 때만 피해 줍니다 (컴퓨터에서 가운데 뜬 창은 그대로)
+    return window.innerHeight - r.bottom < 24 ? Math.round(r.height + 10) : 0;
+  };
+  const lift = near(document.querySelector(".overlay .modal-foot"))
+            || near(document.querySelector(".install-bar"));
+  root.style.setProperty("--toast-lift", `${lift}px`);
 }
 
 /** 모달 열기. body 는 HTML 문자열 또는 Element. 반환: close() */
@@ -125,9 +142,13 @@ export function modal({ title, body, footer, narrow = false, wide = false, onMou
   const bodyEl = box.querySelector(".modal-body");
   if (typeof body === "string") bodyEl.innerHTML = body; else bodyEl.appendChild(body);
   overlay.appendChild(box);
+  requestAnimationFrame(liftToast);
   root.appendChild(overlay);
 
-  const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
+  const close = () => {
+    overlay.remove(); document.removeEventListener("keydown", onKey);
+    requestAnimationFrame(liftToast);          // 창이 닫히면 알림쪽지를 제자리로
+  };
   const onKey = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", onKey);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
