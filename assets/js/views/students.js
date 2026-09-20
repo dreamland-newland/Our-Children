@@ -5,7 +5,7 @@ import {
 } from "../data.js";
 import {
   esc, dash, telLink, fmtBirth, modal, toast, confirmDialog, byName,
-  avatar, cropImage, showSkyBadge,
+  avatar, cropImage, showSkyBadge, detailModal, ageOf,
 } from "../ui.js";
 import { GRADES } from "../config.js";
 import { moveStudent } from "./cells.js";
@@ -351,46 +351,58 @@ function guardian(s) {
 export function showStudent(s, after) {
   if (!s) return;
   const admin = isLoggedIn();
-  modal({
-    title: `${s.name} · ${gradeOf(s) || ""}`,
-    body: `
-      <div style="display:flex;gap:16px;align-items:center;margin-bottom:18px">
-        ${avatar(s.name, photoOf(s.id), 76)}
-        <div>
-          <div style="font-size:19px;font-weight:680">${esc(s.name)}</div>
-          <div style="font-size:13px;color:var(--text-secondary)">
-            ${esc([s.gender, gradeOf(s), s.school].filter(Boolean).join(" · "))}</div>
-          ${!isLoggedIn() && !photoOf(s.id)
-            ? '<div style="font-size:12px;color:var(--text-muted);margin-top:3px">🔒 사진은 로그인한 교사진에게만 보입니다</div>' : ""}
-        </div>
-      </div>
-      <div class="detail-grid">
-        <dt>이름</dt><dd><b>${esc(s.name)}</b>
-          ${showSkyBadge() && s.is_promoted ? ' <span class="badge blue" title="초등부 하늘아이에서 올라온 아이">하늘아이</span>' : ""}
-          ${statusOf(s) !== "재적" ? ` <span class="badge warn">${esc(statusOf(s))}</span>` : ""}</dd>
-        <dt>성별 · 학년</dt><dd>${dash([s.gender, gradeOf(s)].filter(Boolean).join(" · "))}
-          ${gradeOf(s) ? `<span style="color:var(--text-muted);font-size:12px">· ${esc(gradeWithYear(s))}${
-            isAutoGrade(s) ? " · 자동" : " · 직접 지정"}</span>` : ""}</dd>
-        <dt>학교</dt><dd>${dash(s.school)}</dd>
-        <dt>생년월일</dt><dd>${s.birth ? esc(fmtBirth(s.birth))
-          : (s.birth_year ? `${esc(s.birth_year)}년 <span style="color:var(--text-muted);font-size:12px">(월·일 미등록)</span>`
-                          : dash(""))}</dd>
-        <dt>연락처</dt><dd>${isMasked() ? lockNote() : telLink(s.phone)}</dd>
-        <dt>셀</dt><dd>${cellNameOf(s.id) ? esc(cellNameOf(s.id)) : '<span class="badge">미배정</span>'}
-          <span style="color:var(--text-muted);font-size:12px">(${esc(currentVersion()?.label || "")})</span>
-          ${isLoggedIn() ? '<button class="btn btn-ghost btn-sm" data-move>셀 옮기기</button>' : ""}</dd>
-      </div>
-      <div class="section-label">가정</div>
-      ${isMasked() ? `<div class="form-note" style="margin:0">
-        보호자 연락처와 집주소는 <b>로그인한 교사진에게만</b> 보입니다.</div>`
-      : `<div class="detail-grid">
-        <dt>어머니</dt><dd>${dash(s.mother_name)} ${s.mother_phone ? "· " + telLink(s.mother_phone) : ""}</dd>
-        <dt>아버지</dt><dd>${dash(s.father_name)} ${s.father_phone ? "· " + telLink(s.father_phone) : ""}</dd>
-        <dt>형제관계</dt><dd>${dash(s.siblings)}</dd>
-        <dt>집주소</dt><dd>${dash(s.address)}</dd>
-      </div>
-      <div class="section-label">특이사항</div>
-      <div style="font-size:14px">${s.note ? esc(s.note) : '<span style="color:var(--text-muted)">기록된 특이사항이 없습니다.</span>'}</div>`}`,
+  const masked = isMasked();
+  const photo = photoOf(s.id);
+
+  const badges = [];
+  if (showSkyBadge() && s.is_promoted) badges.push({ text: "하늘아이", kind: "blue" });
+  badges.push({ text: statusOf(s), kind: statusOf(s) === "재적" ? "" : "warn" });
+  if (cellNameOf(s.id)) badges.push({ text: cellNameOf(s.id) });
+
+  // 연락 단추 — 번호가 없어도 자리는 지키고 회색으로 둡니다
+  const contacts = masked ? [] : [
+    { label: "본인",   name: s.name,        phone: s.phone },
+    { label: "어머니", name: s.mother_name, phone: s.mother_phone },
+    { label: "아버지", name: s.father_name, phone: s.father_phone },
+  ];
+
+  const sections = [{
+    label: "기본",
+    rows: [
+      { k: "생년월일", v: s.birth
+          ? `${esc(fmtBirth(s.birth, false))}${ageOf(s.birth) ? ` <span class="dim">만 ${ageOf(s.birth)}세</span>` : ""}`
+          : (s.birth_year ? `${esc(s.birth_year)}년 <span class="dim">월·일 미등록</span>` : "") },
+      { k: "학교",   v: s.school ? esc(s.school) : "" },
+      { k: "학년",   v: gradeOf(s)
+          ? `${esc(gradeOf(s))} <span class="dim">${isAutoGrade(s) ? "자동" : "직접 지정"}</span>` : "" },
+      { k: "연락처", v: masked ? lockNote() : telLink(s.phone) },
+      { k: "셀", chev: admin, act: admin ? "move" : "",
+        v: cellNameOf(s.id)
+          ? `${esc(cellNameOf(s.id))} <span class="dim">${esc(currentVersion()?.label || "")}</span>`
+          : '<span class="badge">미배정</span>' },
+    ],
+  }];
+
+  if (masked) {
+    sections.push({ label: "가정", note:
+      "보호자 연락처와 집주소는 <b>로그인한 교사진에게만</b> 보입니다." });
+  } else {
+    sections.push({
+      label: "가정",
+      rows: [
+        { k: "어머니", v: joinContact(s.mother_name, s.mother_phone) },
+        { k: "아버지", v: joinContact(s.father_name, s.father_phone) },
+        { k: "형제",   v: s.siblings ? esc(s.siblings) : "" },
+        { k: "집주소", v: s.address ? esc(s.address) : "" },
+      ],
+    });
+    sections.push({ label: "특이사항", note: s.note ? esc(s.note) : "" });
+  }
+
+  detailModal({
+    name: s.name,
+    sub: [s.gender, gradeOf(s), s.school].filter(Boolean).join(" · "),
+    badges, photo, contacts, sections,
     footer: admin
       ? `<button class="btn btn-danger" data-del>삭제</button>
          <div style="flex:1"></div>
@@ -399,7 +411,7 @@ export function showStudent(s, after) {
       : `<button class="btn" data-close>닫기</button>`,
     onMount(box, close) {
       box.querySelector("[data-edit]")?.addEventListener("click", () => { close(); editStudent(s, after); });
-      box.querySelector("[data-move]")?.addEventListener("click", () => { close(); moveStudent(s, after); });
+      box.querySelector('[data-act="move"]')?.addEventListener("click", () => { close(); moveStudent(s, after); });
       box.querySelector("[data-del]")?.addEventListener("click", async () => {
         if (!(await confirmDialog(`${s.name} 학생의 교적을 삭제할까요? 되돌릴 수 없습니다.`))) return;
         try { await api.deleteStudent(s.id); await api.refresh(); close(); after?.(); toast("삭제했습니다."); }
@@ -407,6 +419,14 @@ export function showStudent(s, after) {
       });
     },
   });
+}
+
+/** «이수현 · 010-0000-0000» — 이름이나 번호 한쪽만 있어도 보기 좋게 */
+function joinContact(name, phone) {
+  const parts = [];
+  if (name) parts.push(esc(name));
+  if (phone) parts.push(telLink(phone));
+  return parts.join(" · ");
 }
 
 // ── 등록 / 편집 ──────────────────────────────────────────

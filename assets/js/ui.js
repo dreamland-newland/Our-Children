@@ -76,6 +76,17 @@ export function installTelCopy() {
 }
 
 /** 생년월일 → "2011. 11. 26. (14세)" */
+/** 생년월일 → 만 나이 (모르면 null) */
+export function ageOf(b) {
+  if (!b) return null;
+  const [y, m, d] = String(b).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const t = new Date();
+  let age = t.getFullYear() - y;
+  if (t.getMonth() + 1 < m || (t.getMonth() + 1 === m && t.getDate() < d)) age--;
+  return age >= 0 && age < 130 ? age : null;
+}
+
 export function fmtBirth(b, withAge = true) {
   if (!b) return "";
   const [y, m, d] = String(b).split("-").map(Number);
@@ -128,15 +139,16 @@ export function liftToast() {
 }
 
 /** 모달 열기. body 는 HTML 문자열 또는 Element. 반환: close() */
-export function modal({ title, body, footer, narrow = false, wide = false, onMount }) {
+export function modal({ title, body, footer, narrow = false, slim = false, wide = false, bare = false, onMount }) {
   const root = document.getElementById("modalRoot");
   const overlay = h("div", { class: "overlay" });
-  const box = h("div", { class: "modal" + (narrow ? " narrow" : "") + (wide ? " wide" : "") });
+  const box = h("div", { class: "modal" + (narrow ? " narrow" : "") + (slim ? " slim" : "")
+    + (wide ? " wide" : "") + (bare ? " bare" : "") });
   box.innerHTML = `
-    <div class="modal-head">
+    ${bare ? "" : `<div class="modal-head">
       <h3>${esc(title)}</h3>
       <button class="icon-btn" data-close aria-label="닫기">✕</button>
-    </div>
+    </div>`}
     <div class="modal-body"></div>
     ${footer ? `<div class="modal-foot">${footer}</div>` : ""}`;
   const bodyEl = box.querySelector(".modal-body");
@@ -155,6 +167,142 @@ export function modal({ title, body, footer, narrow = false, wide = false, onMou
   box.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", close));
   onMount?.(box, close);
   return close;
+}
+
+/** 글자를 클립보드에 넣습니다 (안 되면 옛 방식으로 한 번 더) */
+export async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch {
+    const t = document.createElement("textarea");
+    t.value = text; t.style.position = "fixed"; t.style.opacity = "0";
+    document.body.appendChild(t); t.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { /* 실패해도 아래에서 알려 줍니다 */ }
+    t.remove();
+    return ok;
+  }
+}
+
+/** 사진을 화면 가득 크게 보기 (아무 데나 누르면 닫힙니다) */
+export function photoViewer(url, name = "", sub = "") {
+  if (!url) return;
+  const el = document.createElement("div");
+  el.className = "photo-view";
+  el.innerHTML = `
+    <button class="pv-x" aria-label="닫기">✕</button>
+    <img src="${esc(url)}" alt="${esc(name)}">
+    <div class="pv-cap"><b>${esc(name)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`;
+  const off = () => {
+    el.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); off(); } };
+  el.addEventListener("click", off);
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(el);
+}
+
+/** 번호 하나를 눌렀을 때 뜨는 작은 차림표 — 전화 · 문자 · 복사 */
+export function contactMenu({ label, name, phone }) {
+  const num = fmtPhone(phone);
+  const raw = digits(phone);
+  if (!raw) return;
+  const touch = !isDesktop();
+  const body = `
+    <div class="cm-head">
+      <div class="cm-who">${esc(label)}${name ? ` · ${esc(name)}` : ""}</div>
+      <div class="cm-num">${esc(num)}</div>
+    </div>
+    <div class="cm-acts">
+      ${touch ? `<a class="cm-b pri" href="tel:${esc(raw)}" data-close>📞 전화하기</a>
+                 <a class="cm-b" href="sms:${esc(raw)}" data-close>💬 문자 보내기</a>` : ""}
+      <button type="button" class="cm-b" data-copy>⧉ 번호 복사</button>
+    </div>`;
+  modal({
+    title: "연락하기", narrow: true, bare: true, body,
+    footer: `<button class="btn btn-block" data-close>닫기</button>`,
+    onMount(box, close) {
+      box.querySelector("[data-copy]")?.addEventListener("click", async () => {
+        close();
+        toast(await copyText(num) ? `${num} 복사했습니다.` : "복사하지 못했습니다.", "");
+      });
+    },
+  });
+}
+
+/**
+ * 신상 창 — 사진이 위를 꽉 채우고, 흰 그라데이션 위에 이름이 얹힙니다.
+ *   name/sub/badges : 맨 위에 크게 보여 줄 것
+ *   photo           : 사진 주소 (없으면 이름 첫 글자를 크게)
+ *   contacts        : [{label, name, phone}] — 번호가 없어도 회색으로 자리를 지킵니다
+ *   sections        : [{label, rows:[{k, v, chev, act}], note}]  (v 는 HTML 그대로)
+ */
+export function detailModal({ name, sub = "", badges = [], photo = null,
+                              contacts = [], sections = [], footer = "", onMount }) {
+  const ini = esc(String(name || "?").slice(0, 1));
+  const wrap = document.createElement("div");
+  wrap.className = "dtl";
+  wrap.innerHTML = `
+    <div class="dtl-stick">
+      ${avatar(name, photo, 26)}
+      <b>${esc(name)}</b>${sub ? `<span>${esc(sub.split(" · ")[0])}</span>` : ""}
+      <button class="dtl-x2" data-close aria-label="닫기">✕</button>
+    </div>
+
+    <div class="dtl-hero${photo ? " tap" : ""}"${photo ? ' role="button" tabindex="0" title="눌러서 크게 보기"' : ""}>
+      ${photo ? `<img src="${esc(photo)}" alt="${esc(name)}">` : `<span class="dtl-ini">${ini}</span>`}
+      <span class="dtl-grip"></span>
+      <button class="dtl-x" data-close aria-label="닫기">✕</button>
+      ${photo ? `<span class="dtl-zoom" aria-hidden="true">⤢</span>` : ""}
+      <div class="dtl-fade">
+        <div class="dtl-name">${esc(name)}</div>
+        ${sub ? `<div class="dtl-sub">${esc(sub)}</div>` : ""}
+        ${badges.length ? `<div class="dtl-badges">${badges.map((b) =>
+          `<span class="badge${b.kind ? " " + b.kind : ""}">${esc(b.text)}</span>`).join("")}</div>` : ""}
+      </div>
+    </div>
+
+    <div class="dtl-body">
+      ${contacts.length ? `<div class="dtl-quick">${contacts.map((c, i) => `
+        <button type="button" class="cq${c.phone ? "" : " off"}" ${c.phone ? `data-c="${i}"` : "disabled"}>
+          <span class="cq-i">${c.phone ? "📞" : "—"}</span>
+          <span class="cq-t">${esc(c.label)}${c.phone ? "" : '<small>번호 없음</small>'}</span>
+        </button>`).join("")}</div>` : ""}
+
+      ${sections.map((sec) => `
+        ${sec.label ? `<div class="sec">${esc(sec.label)}</div>` : ""}
+        ${sec.note !== undefined
+          ? `<div class="dtl-note">${sec.note || '<span class="dim">적어 둔 내용이 없습니다.</span>'}</div>`
+          : `<div class="dtl-list">${(sec.rows || []).map((r) => `
+              <div class="dtl-row${r.act ? " tap" : ""}"${r.act ? ` data-act="${esc(r.act)}"` : ""}>
+                <span class="k">${esc(r.k)}</span>
+                <span class="v">${r.v || '<span class="dim">—</span>'}</span>
+                ${r.chev ? '<span class="chev">›</span>' : ""}
+              </div>`).join("")}</div>`}`).join("")}
+    </div>`;
+
+  return modal({
+    title: name, bare: true, slim: true, body: wrap, footer,
+    onMount(box, close) {
+      // 내리면 위에 이름이 작게 붙습니다
+      const scroller = box.querySelector(".modal-body");
+      const hero = box.querySelector(".dtl-hero");
+      const stick = box.querySelector(".dtl-stick");
+      const sync = () => stick.classList.toggle("on", scroller.scrollTop > hero.offsetHeight - 76);
+      scroller.addEventListener("scroll", sync, { passive: true });
+      sync();
+
+      if (photo) {
+        const open = () => photoViewer(photo, name, sub);
+        hero.addEventListener("click", (e) => { if (!e.target.closest("[data-close]")) open(); });
+        hero.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+      }
+      box.querySelectorAll("[data-c]").forEach((b) =>
+        b.addEventListener("click", () => contactMenu(contacts[Number(b.dataset.c)])));
+
+      onMount?.(box, close);
+    },
+  });
 }
 
 /** 확인 대화상자 */

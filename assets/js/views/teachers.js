@@ -2,6 +2,7 @@
 import { state, api, isLoggedIn, isAdmin, teacherPhotoOf, roleLabels, roleOptionRank } from "../data.js";
 import {
   esc, dash, telLink, fmtBirth, modal, toast, confirmDialog, avatar, byName, cropImage, blobToDataURL,
+  detailModal, ageOf,
 } from "../ui.js";
 import { bindDownload as bindXlsx } from "../xlsx.js";
 
@@ -114,37 +115,40 @@ function headRow() {
 export function showTeacher(t, after) {
   if (!t) return;
   const canEdit = isLoggedIn();
-  modal({
-    title: `${t.name} · ${t.role || ""}`,
-    body: `
-      <div style="display:flex;gap:16px;align-items:center;margin-bottom:18px">
-        ${avatar(t.name, teacherPhotoOf(t.id), 76)}
-        <div>
-          <div style="font-size:19px;font-weight:680">${esc(t.name)}</div>
-          <div style="font-size:13px;color:var(--text-secondary)">${esc(t.role || "")}</div>
-          ${!isLoggedIn() && !teacherPhotoOf(t.id)
-            ? '<div style="font-size:12px;color:var(--text-muted);margin-top:3px">🔒 사진은 로그인한 교사진에게만 보입니다</div>' : ""}
-        </div>
-      </div>
-      <div class="detail-grid">
-        <dt>이름</dt><dd><b>${esc(t.name)}</b></dd>
-        <dt>구분</dt><dd><span class="badge ${t.role === "간사" ? "" : "blue"}">${esc(t.role)}</span></dd>
-        <dt>생일</dt><dd>${t.birth ? esc(fmtBirth(t.birth))
-          : t.birth_md ? esc(t.birth_md.replace("-", "월 ") + "일") +
-              ' <span style="color:var(--text-muted);font-size:12px">(연도 미등록)</span>'
-          : dash("")}</dd>
-        <dt>연락처</dt><dd>${isLoggedIn() ? telLink(t.phone)
-          : '<span style="color:var(--text-muted)">🔒 로그인 후 표시</span>'}</dd>
-        <dt>계정</dt><dd>${t.user_id
-          ? '<span class="badge good">가입</span> <span style="color:var(--text-muted);font-size:12px">이 명부 자리에 계정이 연결돼 있습니다</span>'
-          : '<span class="badge">미가입</span> <span style="color:var(--text-muted);font-size:12px">아직 회원가입 전입니다</span>'}</dd>
-      </div>
-      <div class="section-label">비고</div>
-      <div style="font-size:14px">${isLoggedIn()
-        ? (t.note ? esc(t.note) : '<span style="color:var(--text-muted)">기록된 비고가 없습니다.</span>')
-        : '<span style="color:var(--text-muted)">🔒 로그인 후 표시</span>'}</div>`,
+  const photo = teacherPhotoOf(t.id);
+  const lock = '<span class="dim">🔒 로그인 후 표시</span>';
+
+  const badges = [{ text: t.role || "교사진", kind: t.role === "간사" ? "" : "blue" }];
+  badges.push(t.user_id ? { text: "가입", kind: "good" } : { text: "미가입" });
+
+  const birth = t.birth
+    ? `${esc(fmtBirth(t.birth, false))}${ageOf(t.birth) ? ` <span class="dim">만 ${ageOf(t.birth)}세</span>` : ""}`
+    : t.birth_md
+      ? `${esc(t.birth_md.replace("-", "월 "))}일 <span class="dim">연도 미등록</span>`
+      : "";
+
+  detailModal({
+    name: t.name,
+    sub: t.role || "",
+    badges, photo,
+    contacts: canEdit ? [{ label: "전화", name: t.name, phone: t.phone }] : [],
+    sections: [
+      {
+        label: "기본",
+        rows: [
+          { k: "구분",   v: esc(t.role || "") },
+          { k: "생일",   v: birth },
+          { k: "연락처", v: canEdit ? telLink(t.phone) : lock },
+          { k: "계정",   v: t.user_id
+              ? '가입 <span class="dim">이 자리에 계정이 연결돼 있습니다</span>'
+              : '미가입 <span class="dim">아직 회원가입 전입니다</span>' },
+        ],
+      },
+      { label: "비고", note: canEdit ? (t.note ? esc(t.note) : "") : lock },
+    ],
     footer: canEdit
-      ? `<button class="btn" data-close>닫기</button>
+      ? `<div style="flex:1"></div>
+         <button class="btn" data-close>닫기</button>
          <button class="btn btn-primary" data-edit>편집</button>`
       : `<button class="btn" data-close>닫기</button>`,
     onMount(box, close) {

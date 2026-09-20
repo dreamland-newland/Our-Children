@@ -596,6 +596,7 @@ table.data .num { font-variant-numeric: tabular-nums; color: var(--text-secondar
   animation: pop .16s cubic-bezier(.2,.8,.3,1);
 }
 .modal.narrow { width: min(430px, 100%); }
+.modal.slim   { width: min(480px, 100%); }
 .modal.wide { width: min(860px, 100%); }
 @keyframes pop { from { transform: translateY(8px) scale(.99); opacity: 0 } }
 .modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -618,6 +619,156 @@ a.tel { color: var(--series-1); }
   letter-spacing: .05em; margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--grid);
 }
 .section-label:first-child { margin-top: 0; }
+
+/* ══════════════════════════════════════════════════════════
+   신상 창 — 사진이 위를 꽉 채우고, 흰 그라데이션 위에 이름이 얹힙니다
+   (아이폰에 전화 왔을 때 상대 사진이 뜨는 그 느낌)
+   ══════════════════════════════════════════════════════════ */
+.modal.bare .modal-body { padding: 0; }
+.dtl { display: flex; flex-direction: column; }
+
+/* 내려보면 위에 살짝 붙는 이름표 — 자리를 차지하지 않게 음수 여백으로 띄웁니다 */
+.dtl-stick {
+  position: sticky; top: 0; z-index: 6; height: 52px; margin-bottom: -52px;
+  display: flex; align-items: center; gap: 9px; padding: 0 14px;
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  backdrop-filter: saturate(180%) blur(16px);
+  border-bottom: 1px solid var(--border);
+  opacity: 0; pointer-events: none; transition: opacity .18s ease;
+}
+.dtl-stick.on { opacity: 1; pointer-events: auto; }
+.dtl-stick b { font-size: 15px; font-weight: 680; }
+.dtl-stick span { font-size: 12.5px; color: var(--text-muted); }
+.dtl-x2, .dtl-x {
+  border: 0; cursor: pointer; border-radius: 50%; display: grid; place-items: center;
+  font-size: 14px; line-height: 1; padding: 0;
+}
+.dtl-x2 { margin-left: auto; width: 28px; height: 28px; background: var(--surface-2); color: var(--text-secondary); }
+
+/* 사진 */
+.dtl-hero {
+  position: relative; flex: none; height: 420px; overflow: hidden;
+  background: var(--surface-2);
+}
+.dtl-hero.tap { cursor: zoom-in; }
+.dtl-hero img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 26%; display: block; }
+.dtl-ini {
+  width: 100%; height: 100%; display: grid; place-items: center;
+  background: linear-gradient(155deg,
+    color-mix(in srgb, var(--series-1) 30%, var(--surface)),
+    color-mix(in srgb, var(--series-1) 6%, var(--surface-2)));
+  font-size: 108px; font-weight: 700; color: rgba(255, 255, 255, .94);
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .16);
+}
+.dtl-grip {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  width: 38px; height: 4px; border-radius: 99px; background: rgba(255, 255, 255, .75);
+}
+.dtl-x {
+  position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; z-index: 3;
+  background: rgba(20, 20, 20, .42); color: #fff;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+.dtl-zoom {
+  position: absolute; right: 54px; top: 14px; z-index: 2;
+  width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(20, 20, 20, .38); color: #fff; font-size: 13px;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+/* 아래에서 올라오는 흰 그라데이션 */
+.dtl-fade {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 78px 20px 14px;
+  background: linear-gradient(to top,
+    var(--surface) 24%,
+    color-mix(in srgb, var(--surface) 88%, transparent) 52%,
+    transparent 100%);
+}
+.dtl-name { font-size: 27px; font-weight: 750; letter-spacing: -.025em; line-height: 1.16; }
+.dtl-sub { font-size: 13.5px; color: var(--text-secondary); margin-top: 4px; }
+.dtl-badges { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+
+.dtl-body { padding: 6px 20px 18px; }
+
+/* 빠른 연락 — 본인 · 어머니 · 아버지 */
+.dtl-quick { display: flex; gap: 8px; margin: 6px 0 2px; }
+.cq {
+  flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 6px; border-radius: 11px; border: 0; cursor: pointer;
+  background: var(--surface-2); color: var(--text-primary); font: inherit;
+  font-size: 13px; font-weight: 600;
+}
+.cq:hover { background: var(--grid); }
+.cq:active { transform: scale(.98); }
+.cq.off { background: transparent; box-shadow: inset 0 0 0 1px var(--border); color: var(--text-muted); cursor: default; }
+.cq.off:hover { background: transparent; }
+.cq-i { font-size: 13px; }
+.cq-t { display: flex; flex-direction: column; align-items: center; line-height: 1.2; }
+.cq-t small { font-size: 10px; font-weight: 400; color: var(--text-muted); }
+
+/* 좌라락 이어지는 줄 목록 */
+.dtl .sec {
+  font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: .06em;
+  margin: 18px 0 6px; padding-left: 2px;
+}
+.dtl-list { border: 1px solid var(--border); border-radius: 13px; overflow: hidden; background: var(--surface); }
+.dtl-row {
+  display: flex; align-items: center; gap: 12px; min-height: 42px;
+  padding: 9px 14px; border-bottom: 1px solid var(--grid);
+}
+.dtl-row:last-child { border-bottom: 0; }
+.dtl-row.tap { cursor: pointer; }
+.dtl-row.tap:hover { background: var(--surface-2); }
+.dtl-row .k { font-size: 12.5px; color: var(--text-muted); flex: 0 0 74px; }
+.dtl-row .v { margin-left: auto; text-align: right; font-size: 14px; font-weight: 500; min-width: 0; }
+.dtl-row .v .dim, .dtl-note .dim { color: var(--text-muted); font-size: 11.5px; font-weight: 400; }
+.dtl-row .v a { color: var(--series-1); }
+.dtl-row .chev { color: var(--border-strong); font-size: 15px; flex: none; }
+.dtl-note {
+  font-size: 13.5px; color: var(--text-secondary); line-height: 1.65;
+  padding: 12px 14px; background: var(--surface-2); border-radius: 13px;
+}
+
+/* 사진 크게 보기 */
+.photo-view {
+  position: fixed; inset: 0; z-index: 120; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 15px; padding: 24px;
+  background: rgba(8, 8, 8, .93); cursor: zoom-out;
+  animation: pvIn .18s ease both;
+}
+@keyframes pvIn { from { opacity: 0 } }
+.photo-view img {
+  max-width: min(520px, 86vw); max-height: 64vh; width: auto; border-radius: 20px;
+  object-fit: contain; box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+}
+.pv-cap { text-align: center; color: #fff; font-size: 16px; font-weight: 600; }
+.pv-cap small { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 400; color: rgba(255,255,255,.62); }
+.pv-x {
+  position: absolute; top: 18px; right: 18px; width: 36px; height: 36px; border: 0; cursor: pointer;
+  border-radius: 50%; background: rgba(255,255,255,.16); color: #fff; font-size: 16px;
+}
+
+/* 연락하기 차림표 */
+.cm-head { text-align: center; padding: 20px 20px 14px; border-bottom: 1px solid var(--border); }
+.cm-who { font-size: 12.5px; color: var(--text-muted); }
+.cm-num { font-size: 21px; font-weight: 700; letter-spacing: -.01em; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.cm-acts { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px 4px; }
+.cm-b {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 13px 0; border-radius: 12px; border: 1px solid var(--border-strong);
+  background: var(--surface); color: var(--text-primary);
+  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none;
+}
+.cm-b:hover { background: var(--surface-2); }
+.cm-b.pri { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+.btn-block { width: 100%; justify-content: center; }
+
+/* 휴대폰 — 사진을 조금 더 시원하게, 여백은 조금 좁게 */
+@media (max-width: 640px) {
+  .dtl-hero { height: min(56vh, 420px); }
+  .dtl-body { padding: 6px 16px 16px; }
+  .dtl-name { font-size: 26px; }
+}
 
 /* ── 관리자 설정 창 (맥/iOS 설정처럼 왼쪽 목록 + 오른쪽 내용) ──── */
 .settings-shell {
@@ -786,7 +937,7 @@ a.tel { color: var(--series-1); }
   /* ── 아래에서 올라오는 시트 ── */
   /*  grid-template-columns: 100% 가 없으면 창이 «내용 너비» 로 커져 오른쪽이 잘립니다 */
   .overlay { align-items: flex-end; justify-items: stretch; padding: 0; grid-template-columns: 100%; }
-  .modal, .modal.narrow, .modal.wide {
+  .modal, .modal.narrow, .modal.slim, .modal.wide {
     width: 100%; max-width: 100%; max-height: 90vh;
     border-radius: 18px 18px 0 0; border-bottom: 0;
     animation: sheetUp .22s cubic-bezier(.2, .8, .3, 1);
