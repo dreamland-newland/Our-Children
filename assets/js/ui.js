@@ -138,6 +138,24 @@ export function liftToast() {
   root.style.setProperty("--toast-lift", `${lift}px`);
 }
 
+/* ── 창이 떠 있는 동안 뒤쪽 화면 잠그기 ──────────────────────
+   창을 열면 뒤 페이지는 어차피 못 쓰는데 스크롤 막대만 남아 거슬립니다.
+   잠그는 동안 막대가 사라지면서 화면이 옆으로 튀지 않도록, 막대 두께만큼
+   오른쪽 여백을 대신 넣어 둡니다. 창을 여러 개 겹쳐 열어도 세어서 되돌립니다. */
+let pageLocks = 0;
+function lockPage() {
+  if (pageLocks++ > 0) return;
+  const bar = window.innerWidth - document.documentElement.clientWidth;
+  if (bar > 0) document.body.style.paddingRight = `${bar}px`;
+  document.body.style.overflow = "hidden";
+}
+function unlockPage() {
+  if (--pageLocks > 0) return;
+  pageLocks = 0;
+  document.body.style.overflow = "";
+  document.body.style.paddingRight = "";
+}
+
 /**
  * 얇게 떠올랐다 사라지는 스크롤 막대 (맥 트랙패드 느낌).
  *   · 진짜 스크롤 막대는 숨깁니다 — 자리를 차지하지 않아 사진이 가장자리까지 꽉 찹니다
@@ -205,10 +223,14 @@ export function modal({ title, body, footer, narrow = false, slim = false, wide 
   overlay.appendChild(box);
   requestAnimationFrame(liftToast);
   root.appendChild(overlay);
+  lockPage();
   const stopScroll = slimScroll(box);
 
+  let closed = false;
   const close = () => {
-    stopScroll();
+    if (closed) return;                        // 두 번 닫아도 잠금이 어긋나지 않게
+    closed = true;
+    stopScroll(); unlockPage();
     overlay.remove(); document.removeEventListener("keydown", onKey);
     requestAnimationFrame(liftToast);          // 창이 닫히면 알림쪽지를 제자리로
   };
@@ -243,14 +265,18 @@ export function photoViewer(url, name = "", sub = "") {
     <button class="pv-x" aria-label="닫기">✕</button>
     <img src="${esc(url)}" alt="${esc(name)}">
     <div class="pv-cap"><b>${esc(name)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`;
+  let gone = false;
   const off = () => {
-    el.remove();
+    if (gone) return;
+    gone = true;
+    el.remove(); unlockPage();
     document.removeEventListener("keydown", onKey);
   };
   const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); off(); } };
   el.addEventListener("click", off);
   document.addEventListener("keydown", onKey);
   document.body.appendChild(el);
+  lockPage();
 }
 
 /** 번호 하나를 눌렀을 때 뜨는 작은 차림표 — 전화 · 문자 · 복사 */

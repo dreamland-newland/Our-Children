@@ -752,16 +752,19 @@ a.tel { color: var(--series-1); }
 /* 사진 크게 보기 */
 .photo-view {
   position: fixed; inset: 0; z-index: 120; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 15px; padding: 24px;
-  background: rgba(8, 8, 8, .93); cursor: zoom-out;
+  align-items: center; justify-content: center; gap: 14px; padding: 16px;
+  background: rgba(8, 8, 8, .94); cursor: zoom-out;
   animation: pvIn .18s ease both;
 }
 @keyframes pvIn { from { opacity: 0 } }
+/* 얼굴을 «진짜 크게» — 화면이 허락하는 만큼 채웁니다 */
 .photo-view img {
-  max-width: min(520px, 86vw); max-height: 64vh; width: auto; border-radius: 20px;
-  object-fit: contain; box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+  width: auto; height: auto;
+  max-width: min(94vw, 820px); max-height: 78vh;
+  border-radius: 18px; object-fit: contain;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
 }
-.pv-cap { text-align: center; color: #fff; font-size: 16px; font-weight: 600; }
+.pv-cap { text-align: center; color: #fff; font-size: 17px; font-weight: 650; }
 .pv-cap small { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 400; color: rgba(255,255,255,.62); }
 .pv-x {
   position: absolute; top: 18px; right: 18px; width: 36px; height: 36px; border: 0; cursor: pointer;
