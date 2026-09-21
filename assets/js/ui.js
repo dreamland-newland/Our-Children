@@ -138,6 +138,55 @@ export function liftToast() {
   root.style.setProperty("--toast-lift", `${lift}px`);
 }
 
+/**
+ * 얇게 떠올랐다 사라지는 스크롤 막대 (맥 트랙패드 느낌).
+ *   · 진짜 스크롤 막대는 숨깁니다 — 자리를 차지하지 않아 사진이 가장자리까지 꽉 찹니다
+ *   · 굴리는 동안만 보이고, 멈추면 스르륵 사라집니다
+ *   · 보여 주기만 하는 표시라 끌어당기지는 않습니다 (스크롤 자체는 그대로 동작)
+ */
+function slimScroll(box) {
+  const el = box.querySelector(".modal-body");
+  if (!el) return () => {};
+  el.classList.add("slimscroll");
+
+  const rail = h("div", { class: "ss-rail" });
+  const thumb = h("div", { class: "ss-thumb" });
+  rail.appendChild(thumb);
+  box.appendChild(rail);
+
+  let timer = null;
+  const draw = () => {
+    const view = el.clientHeight;
+    const total = el.scrollHeight;
+    if (total <= view + 1) { rail.style.display = "none"; return; }   // 넘칠 게 없으면 아예 숨김
+    rail.style.display = "";
+    rail.style.top = `${el.offsetTop}px`;
+    rail.style.height = `${view}px`;
+    const size = Math.max(28, Math.round((view * view) / total));
+    const room = view - size;
+    const pos = Math.round((el.scrollTop / (total - view)) * room);
+    thumb.style.height = `${size}px`;
+    thumb.style.transform = `translateY(${Math.min(room, Math.max(0, pos))}px)`;
+  };
+  const flash = () => {
+    draw();
+    rail.classList.add("on");
+    clearTimeout(timer);
+    timer = setTimeout(() => rail.classList.remove("on"), 800);
+  };
+
+  el.addEventListener("scroll", flash, { passive: true });
+  let ro = null;
+  if (window.ResizeObserver) {                      // 사진이 늦게 떠서 길이가 바뀌어도 따라갑니다
+    ro = new ResizeObserver(draw);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+  }
+  requestAnimationFrame(draw);
+
+  return () => { clearTimeout(timer); ro?.disconnect(); };
+}
+
 /** 모달 열기. body 는 HTML 문자열 또는 Element. 반환: close() */
 export function modal({ title, body, footer, narrow = false, slim = false, wide = false, bare = false, onMount }) {
   const root = document.getElementById("modalRoot");
@@ -156,8 +205,10 @@ export function modal({ title, body, footer, narrow = false, slim = false, wide 
   overlay.appendChild(box);
   requestAnimationFrame(liftToast);
   root.appendChild(overlay);
+  const stopScroll = slimScroll(box);
 
   const close = () => {
+    stopScroll();
     overlay.remove(); document.removeEventListener("keydown", onKey);
     requestAnimationFrame(liftToast);          // 창이 닫히면 알림쪽지를 제자리로
   };
@@ -483,6 +534,7 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
         <div class="crop-view" id="cropView" style="width:${V}px;height:${V}px">
           <img id="cropImg" alt="" draggable="false">
           <div class="crop-guide"></div>
+          <div class="crop-guide-rect"></div>
         </div>
       </div>
       <div class="crop-panel">
@@ -515,8 +567,12 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
         </div>
 
         <div class="crop-hint">
-          <b>동그라미 안</b>이 프로필 사진이 됩니다. 사진을 <b>끌어서</b> 옮기고,
-          슬라이더로 키우거나 줄이세요.
+          사진을 <b>끌어서</b> 옮기고, 슬라이더로 키우거나 줄이세요.
+          <div class="crop-legend">
+            <span><i class="lg-c"></i>동그라미 — 목록·사진첩에 쓰입니다</span>
+            <span><i class="lg-r"></i>세로 네모 — 신상 창 맨 위에 쓰입니다</span>
+          </div>
+          <b>둘 안에 얼굴이 다 들어오게</b> 맞춰 주세요.
           <div class="dim">퍼센트를 누르면 직접 적을 수 있습니다 ·
             컴퓨터 <b>Ctrl(⌘)+휠</b> · 휴대폰 <b>두 손가락</b></div>
         </div>
