@@ -23,11 +23,45 @@ let searchOpen = false;
 let unlocked = true;           // 지난 기록은 잠가 두고, «수정» 을 눌러야 열립니다
 let busy = false;
 let timer = null;
+let syncTick = null;           // «몇 분 전에 맞췄는지» 를 1분마다 고쳐 쓰는 시계
+let unwatch = null;            // 실시간 구독 끊기
+let syncedAt = 0;              // 마지막으로 서버와 맞춘 시각
+let live = false;              // 실시간 연결이 살아 있는가
+let redraw = null;             // 화면 다시 그리기 (app.js 가 넘겨 준 것)
+let holdRender = false;        // 당겨서 새로고침하는 동안엔 화면을 갈아엎지 않습니다
+let pendingRender = false;     //  (다 끝나고 판이 접힌 뒤에 한 번만 다시 그립니다)
 
 /** 다른 화면으로 옮겨 갈 때 자동 새로고침을 멈춥니다 */
 export function stopWatch() {
   if (timer) { clearInterval(timer); timer = null; }
+  if (syncTick) { clearInterval(syncTick); syncTick = null; }
+  if (unwatch) { try { unwatch(); } catch { /* 이미 끊김 */ } unwatch = null; }
+  live = false;
   document.body.classList.remove("att-page");
+}
+
+// ── «언제 맞췄는지» ─────────────────────────────────────────
+/** 방금 · 3분 전 · 1시간 전 … */
+function agoText(t) {
+  if (!t) return "아직 안 맞춤";
+  const m = Math.floor((Date.now() - t) / 60000);
+  if (m < 1) return "방금 맞췄습니다";
+  if (m < 60) return `${m}분 전 기준`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}시간 전 기준` : "한참 전 기준";
+}
+const syncText = () => (live ? "실시간으로 맞추는 중" : agoText(syncedAt));
+
+/** 화면 전체를 다시 그리지 않고 그 한 줄만 고쳐 씁니다 (보던 자리가 튀지 않게) */
+function paintSync() {
+  const t = document.getElementById("attSyncT");
+  if (t) t.textContent = syncText();
+  const d = document.getElementById("attSyncDot");
+  if (d) {
+    const stale = !live && syncedAt && Date.now() - syncedAt > 5 * 60000;
+    d.classList.toggle("live", live);
+    d.classList.toggle("stale", !!stale);
+  }
 }
 
 const isToday = () => target.held_on === sundayOf() || target.held_on >= ymd();
@@ -100,10 +134,23 @@ export function html() {
   <div class="att" id="att">
     <div class="att-wip">
       <span class="att-wip-t">공사중</span>
-      <span>아직 만들고 있는 화면입니다. 시험 삼아 눌러 보셔도 되지만,
-            <b>정식으로 쓰기 전까지는 기록이 지워질 수 있어요.</b></span>
+      <span>아직 만들고 있는 화면입니다 — <b>정식으로 쓰기 전까지는 기록이 지워질 수 있어요.</b></span>
     </div>
-    <div class="att-pull" id="attPull"><span class="att-quote"></span></div>
+    <div class="att-pull" id="attPull">
+      <div class="att-pull-in">
+        <div class="att-ring" id="attRing">
+          <svg viewBox="0 0 52 52" aria-hidden="true">
+            <circle class="rg-bg" cx="26" cy="26" r="21"></circle>
+            <circle class="rg-fg" cx="26" cy="26" r="21"></circle>
+          </svg>
+          <span class="rg-clover" aria-hidden="true"><i>🍀</i></span>
+        </div>
+        <div class="att-pull-txt">
+          <b id="attPullT">아래로 당기면 새로고침</b>
+          <span class="att-quote"></span>
+        </div>
+      </div>
+    </div>
 
     <div class="att-bar">
       <div class="att-row1">
@@ -133,6 +180,12 @@ export function html() {
         <button class="att-ico" id="attLog" title="지난 기록" aria-label="지난 기록">${ICO.log}</button>
         ${desk ? `<button class="att-ico" id="attPrint" title="인쇄" aria-label="인쇄">${ICO.print}</button>
                   <button class="att-ico" id="attXlsx" title="엑셀 받기" aria-label="엑셀 받기">${ICO.down}</button>` : ""}
+      </div>
+
+      <div class="att-sync" id="attSync">
+        <span class="sy-dot" id="attSyncDot"></span>
+        <span id="attSyncT">${esc(syncText())}</span>
+        <span class="sy-hint">· 아래로 당기면 바로 맞춰집니다</span>
       </div>
     </div>
 
@@ -254,6 +307,7 @@ export function mount(root, rerender) {
   };
   fixTop(); window.addEventListener("resize", fixTop);
 
+  redraw = rerender;
   syncEvent();
   if (ev && !marks.size) load(rerender);
 
@@ -316,12 +370,32 @@ export function mount(root, rerender) {
     } catch (e) { toast("엑셀을 만들지 못했습니다: " + e.message, "err"); }
   });
 
-  // 출석당번이 두 분일 때를 위해 — 20초마다 조용히 서버 쪽을 다시 읽어 옵니다
+  // 출석당번이 두 분일 때 —
+  //  ① 실시간 연결이 되면 상대가 누르는 즉시 받아 옵니다
+  //  ② 연결이 안 되거나 끊겨도 1분마다 조용히 다시 읽어 와서 결국 맞습니다
+  if (ev) {
+    try {
+      unwatch = api.watchMarks(ev.id, () => { load(rerender, true); });
+      live = state.mode === "supabase";
+    } catch { live = false; }
+  }
+  paintSync();
+  syncTick = setInterval(paintSync, 30000);
   timer = setInterval(() => {
     if (location.hash !== "#/attend") return stopWatch();
     if (document.hidden || busy || !ev) return;
     load(rerender, true);
-  }, 20000);
+  }, 60000);
+  // 화면을 다시 켜면(주머니에서 꺼내면) 바로 한 번 맞춥니다
+  document.addEventListener("visibilitychange", onWake);
+}
+
+/** 화면을 다시 켰을 때 — 그 사이에 바뀐 게 있으면 받아 옵니다 */
+function onWake() {
+  if (document.hidden || location.hash !== "#/attend") return;
+  const root = document.getElementById("att");
+  if (!root) { document.removeEventListener("visibilitychange", onWake); return; }
+  if (redraw) load(redraw, true);
 }
 
 // ── 톡톡 두 번 / 꾹 누르기 ──────────────────────────────────
@@ -441,36 +515,98 @@ function randomQuote() {
 function wirePull(root, rerender) {
   const bar = root.querySelector("#attPull");
   if (!bar || isDesktop()) return;
-  let y0 = null, ready = false;
-  const set = (h) => { bar.style.height = `${h}px`; };
+
+  const label = bar.querySelector("#attPullT");
+  const quote = bar.querySelector(".att-quote");
+  const arc   = bar.querySelector(".rg-fg");
+  const ring  = bar.querySelector("#attRing");
+  const C = 2 * Math.PI * 21;                    // 동그라미 둘레 (r=21)
+
+  const MAX  = 200;   // 손가락을 따라 여기까지 늘어납니다 (더 당길수록 뻑뻑해집니다)
+  const TRIG = 74;    // 이만큼 당기면 «놓으면 새로고침»
+  const REST = 62;    // 새로고침하는 동안 머무는 높이
+
+  let y0 = null, h = 0, ready = false, running = false;
+
+  const setH = (v, smooth = false) => {
+    h = v;
+    bar.style.transition = smooth ? "height .3s cubic-bezier(.22,.9,.24,1)" : "none";
+    bar.style.height = `${Math.round(v)}px`;
+  };
+  const setPct = (p) => {                         // 0~1
+    const v = Math.max(0, Math.min(1, p));
+    arc.style.strokeDasharray = `${C}`;
+    arc.style.strokeDashoffset = `${C * (1 - v)}`;
+    //  클로버는 당길수록 커지고 색이 살아납니다 (숫자 대신 이게 진행 정도를 말해 줍니다)
+    ring.style.setProperty("--grow", `${0.5 + 0.5 * v}`);
+    ring.style.setProperty("--gray", `${1 - v}`);
+    ring.classList.toggle("full", v >= 1);
+    bar.style.setProperty("--p", `${Math.min(1, v * 1.7)}`);
+  };
+
+  // 고무줄 느낌 — 처음엔 손가락을 그대로 따라오고, 갈수록 뻑뻑해집니다
+  const band = (dy) => MAX * (1 - 1 / (dy / MAX + 1));
 
   root.addEventListener("touchstart", (e) => {
-    if (window.scrollY > 2 || e.touches.length !== 1) { y0 = null; return; }
-    y0 = e.touches[0].clientY; ready = false;
-    bar.querySelector(".att-quote").textContent = randomQuote();
+    if (running || window.scrollY > 2 || e.touches.length !== 1) { y0 = null; return; }
+    y0 = e.touches[0].clientY;
+    ready = false;
+    quote.textContent = randomQuote();
+    label.textContent = "아래로 당기면 새로고침";
+    setPct(0);
   }, { passive: true });
 
   root.addEventListener("touchmove", (e) => {
-    if (y0 == null) return;
+    if (y0 == null || running) return;
     const dy = e.touches[0].clientY - y0;
-    if (dy <= 0) { set(0); ready = false; return; }
-    const h = Math.min(96, dy * 0.55);
-    set(h);
-    ready = h >= 62;
-    bar.classList.toggle("ready", ready);
+    if (dy <= 0) { setH(0); setPct(0); ready = false; bar.classList.remove("ready"); return; }
+    setH(band(dy));
+    setPct(h / TRIG);
+    const next = h >= TRIG;
+    if (next !== ready) {
+      ready = next;
+      bar.classList.toggle("ready", ready);
+      label.textContent = ready ? "손을 놓으면 새로고침됩니다" : "아래로 당기면 새로고침";
+      if (ready) buzz(10);
+    }
   }, { passive: true });
 
   const end = async () => {
-    if (y0 == null) return;
+    if (y0 == null || running) return;
     y0 = null;
-    if (!ready) { set(0); bar.classList.remove("ready"); return; }
-    bar.classList.add("run"); set(56);
+    if (!ready) { setH(0, true); setPct(0); bar.classList.remove("ready"); return; }
+
+    running = true;
+    holdRender = true; pendingRender = false;
+    bar.classList.add("run");
+    label.textContent = "새로고침 중입니다";
+    setH(REST, true);
     buzz(14);
+
+    //  퍼센트는 «척하는 숫자» 가 아니라 실제 단계에 맞춰 올라갑니다.
+    //  다만 서버가 빨리 답하면 숫자가 튀어 보여서, 90%까지는 부드럽게 채웁니다.
+    let p = 0, done = false;
+    setPct(0);
+    const grow = setInterval(() => { if (!done) { p = Math.min(0.9, p + 0.07); setPct(p); } }, 60);
+
     await refreshAll(rerender);
+    done = true; clearInterval(grow);
+    setPct(1);
+
+    label.textContent = "다 맞췄습니다";
+    bar.classList.remove("run");
+    paintSync();
+    buzz(8);
     setTimeout(() => {
-      const b = document.getElementById("attPull");
-      if (b) { b.style.height = "0px"; b.classList.remove("ready", "run"); }
-    }, 850);
+      setH(0, true);
+      bar.classList.remove("ready");
+      setTimeout(() => {
+        running = false;
+        holdRender = false;
+        if (pendingRender) { pendingRender = false; rerender(); }
+        else paintSync();
+      }, 340);
+    }, 480);
   };
   root.addEventListener("touchend", end);
   root.addEventListener("touchcancel", end);
@@ -576,7 +712,8 @@ async function load(rerender, quiet = false) {
     const changed = next.size !== marks.size
       || [...next].some(([k, v]) => marks.get(k)?.present !== v.present || marks.get(k)?.memo !== v.memo);
     marks = next;
-    if (!quiet || changed) rerender();
+    syncedAt = Date.now();
+    if (!quiet || changed) draw(rerender); else paintSync();
   } catch (e) {
     if (!quiet) toast(e.message, "err");
   } finally { busy = false; }
@@ -587,8 +724,15 @@ async function refreshAll(rerender) {
     await api.reloadAttendance();
     syncEvent();
     if (ev) await load(rerender);
-    else rerender();
+    else draw(rerender);
+    syncedAt = Date.now();
   } catch (e) { toast(e.message, "err"); }
+}
+
+/** 화면 다시 그리기 — 단, 당기는 중에는 미뤄 둡니다 (판이 손에서 사라지지 않도록) */
+function draw(rerender) {
+  if (holdRender) { pendingRender = true; return; }
+  rerender();
 }
 
 /** 첫 표시를 누르는 순간 그 모임을 서버에 만듭니다 (미리 만들어 두지 않습니다) */

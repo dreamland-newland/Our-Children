@@ -48,6 +48,21 @@ function applyThemeMode(mode) {
   else delete document.documentElement.dataset.theme;
   localStorage.setItem("kkumttang.theme", mode);
   syncThemeSeg();
+  syncStatusBarColor();
+}
+
+/** 휴대폰 맨 위 상태막대(와 화면을 당길 때 드러나는 여백) 색을 지금 화면 색에 맞춥니다.
+ *  이걸 안 맞추면 당길 때 엉뚱한 색이 확 드러납니다. */
+function syncStatusBarColor() {
+  const dark = document.documentElement.dataset.theme === "dark"
+    || (!document.documentElement.dataset.theme
+        && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
+  const color = getComputedStyle(document.documentElement)
+    .getPropertyValue("--page").trim() || (dark ? "#0d0d0d" : "#f9f9f7");
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove());
+  const m = document.createElement("meta");
+  m.name = "theme-color"; m.content = color;
+  document.head.appendChild(m);
 }
 /** 화면 모드 알약. 상단바에 하나, 휴대폰에서는 프로필 차림표 안에도 하나 —
  *  둘 다 같은 모양이라 «지금 켜진 칸» 을 각자의 실제 너비에 맞춰 옮겨 줍니다. */
@@ -65,6 +80,9 @@ function syncThemeSeg() {
 }
 applyThemeMode(currentThemeMode());
 window.addEventListener("resize", syncThemeSeg);
+// 기기 밝기 설정을 «시스템 따름» 으로 두고 있을 때, 기기가 바뀌면 같이 따라갑니다
+window.matchMedia?.("(prefers-color-scheme: dark)")
+  .addEventListener?.("change", () => { if (currentThemeMode() === "system") syncStatusBarColor(); });
 // 상단바든 차림표 안이든, 알약을 누르면 한 곳에서 받아 처리합니다
 document.addEventListener("click", (e) => {
   const b = e.target.closest(".theme-seg button[data-mode]");

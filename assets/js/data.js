@@ -290,6 +290,19 @@ const supabaseAdapter = {
     return data || [];
   },
 
+  /** 다른 선생님이 누른 것을 «바로» 받아 보기 (Supabase Realtime).
+   *  켜져 있지 않아도 괜찮습니다 — 조용히 아무 일도 하지 않고, 자동 새로고침이 대신합니다. */
+  watchMarks(eventId, onChange) {
+    try {
+      const ch = sb.channel(`attend-${eventId}`)
+        .on("postgres_changes",
+            { event: "*", schema: "public", table: "attend_marks", filter: `event_id=eq.${eventId}` },
+            () => onChange())
+        .subscribe();
+      return () => { try { sb.removeChannel(ch); } catch { /* 이미 끊겼으면 그만 */ } };
+    } catch { return () => {}; }
+  },
+
   async addQuote(text) {
     const t = String(text || "").trim();
     if (!t) throw new Error("문구를 적어 주세요.");
@@ -727,6 +740,8 @@ const demoAdapter = {
     for (const sid of studentIds) out.push(await this.mark(eventId, sid, { present }));
     return out;
   },
+  watchMarks() { return () => {}; },   // 데모 모드에는 서버가 없습니다
+
   async addQuote(text) {
     if (!state.profile?.is_admin) throw new Error("문구 관리는 관리자만 할 수 있습니다.");
     const t = String(text || "").trim();
@@ -1175,6 +1190,7 @@ export const api = {
   listMarks: (eid) => adapter.listMarks(eid),
   mark: (eid, sid, patch) => adapter.mark(eid, sid, patch),
   markMany: (eid, sids, present) => adapter.markMany(eid, sids, present),
+  watchMarks: (eid, cb) => adapter.watchMarks(eid, cb),
   addQuote: (t) => adapter.addQuote(t),
   deleteQuote: (id) => adapter.deleteQuote(id),
 };

@@ -10,7 +10,10 @@
 
 <!-- 홈 화면에 추가(앱처럼 쓰기) -->
 <link rel="manifest" href="./manifest.json">
-<meta name="theme-color" content="#565CA9">
+<!-- 위쪽 상태막대·당길 때 드러나는 여백 색. 화면 배경과 같은 톤으로 맞춥니다.
+     (밝기 설정을 손으로 바꿀 때는 assets/js/app.js 가 이 값을 함께 고쳐 씁니다) -->
+<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
