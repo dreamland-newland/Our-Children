@@ -1343,3 +1343,277 @@ table.data.peek td.hit {
 .chk:hover { border-color: var(--border-strong); color: var(--text-primary); }
 .chk input { width: 14px; height: 14px; margin: 0; accent-color: var(--series-1); }
 .chk:has(input:checked) { color: var(--text-primary); font-weight: 550; }
+
+/* ════════════════════════════════════════════════════════════
+   출석부
+   · 아이 이름이 주인공이라, 나머지는 최대한 얇고 조용하게.
+   ════════════════════════════════════════════════════════════ */
+.att { --att-top: 52px; }
+
+/* ── 머리띠 (두 줄) ─────────────────────────────────────── */
+.att-bar {
+  position: sticky; top: var(--att-top); z-index: 24;
+  margin: -4px -4px 8px; padding: 6px 4px 7px;
+  background: color-mix(in srgb, var(--page) 86%, transparent);
+  backdrop-filter: saturate(1.5) blur(14px);
+  -webkit-backdrop-filter: saturate(1.5) blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+.att-row1 { display: flex; align-items: center; gap: 4px; }
+.att-row2 { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+
+.att-nav {
+  width: 26px; height: 30px; flex: none; border: 0; border-radius: 8px;
+  background: transparent; color: var(--text-secondary);
+  font-size: 19px; line-height: 1; cursor: pointer;
+}
+.att-nav:hover { background: var(--surface-2); }
+.att-when {
+  flex: 1 1 auto; min-width: 0; text-align: left;
+  border: 0; background: transparent; cursor: pointer; padding: 1px 4px;
+  display: flex; align-items: baseline; gap: 7px; color: inherit; font-family: inherit;
+}
+.att-when b { font-size: 15.5px; font-weight: 700; letter-spacing: -.2px; white-space: nowrap; }
+.att-when small { font-size: 11.5px; color: var(--text-muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.att-sum { flex: none; font-variant-numeric: tabular-nums; font-size: 14px; letter-spacing: -.2px; }
+.att-sum .in  { font-style: normal; font-weight: 750; color: var(--good); }
+.att-sum .sl  { color: var(--text-muted); margin: 0 1px; }
+.att-sum .tot { font-style: normal; color: var(--text-muted); }
+.att-lock {
+  flex: none; margin-left: 6px; padding: 4px 10px; font-size: 12.5px; font-weight: 600;
+  border: 1px solid var(--border-strong); border-radius: 999px;
+  background: var(--surface); color: var(--text-primary); cursor: pointer;
+}
+
+.att-find {
+  flex: 1 1 130px; min-width: 110px; display: flex; align-items: center; gap: 5px;
+  padding: 0 9px; height: 30px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid transparent;
+}
+.att-find:focus-within { border-color: var(--series-1); background: var(--surface); }
+.att-find svg { width: 14px; height: 14px; flex: none; fill: none;
+  stroke: var(--text-muted); stroke-width: 2; stroke-linecap: round; }
+.att-find input {
+  border: 0 !important; background: transparent !important; padding: 0 !important;
+  height: 26px; font-size: 13.5px; width: 100%; min-width: 0;
+}
+.att-find input:focus { outline: none; }
+.att-find input::-webkit-search-cancel-button { -webkit-appearance: none; }
+
+.att-seg {
+  display: inline-flex; flex: none; padding: 2px; gap: 1px; border-radius: 999px;
+  background: var(--surface-2);
+}
+.att-seg button {
+  border: 0; background: transparent; cursor: pointer; font-family: inherit;
+  padding: 3px 9px; font-size: 12px; font-weight: 600; border-radius: 999px;
+  color: var(--text-muted); white-space: nowrap;
+}
+.att-seg button.on { background: var(--surface); color: var(--text-primary); box-shadow: var(--shadow); }
+.att-seg-wide { width: 100%; }
+.att-seg-wide button { flex: 1; padding: 6px 0; font-size: 13px; }
+.att-ico {
+  flex: none; width: 30px; height: 30px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); font-size: 14px; line-height: 1;
+}
+.att-ico:hover { background: var(--surface-2); }
+.att-ico svg { width: 15px; height: 15px; fill: none; stroke: var(--text-secondary);
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; margin: 0 auto; }
+
+.att-locked {
+  margin: 0 0 10px; padding: 7px 12px; border-radius: 999px; font-size: 12.5px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--warning) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warning) 34%, var(--border));
+}
+
+/* ── 셀 한 덩이 ────────────────────────────────────────── */
+.att-cell { margin-bottom: 12px; }
+.att-ch {
+  display: flex; align-items: baseline; gap: 7px; padding: 2px 2px 5px;
+  border-bottom: 1px solid var(--grid); margin-bottom: 7px;
+}
+.att-ch b { font-size: 13.5px; font-weight: 700; }
+.att-lead { font-size: 11.5px; color: var(--text-muted); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.att-cnt { margin-left: auto; flex: none; font-size: 12px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums; }
+.att-all {
+  flex: none; border: 0; background: transparent; cursor: pointer; font-family: inherit;
+  font-size: 11.5px; font-weight: 600; color: var(--series-1); padding: 0 0 0 4px;
+}
+.att-body.ro .att-chip, .att-body.ro .att-row, .att-body.ro .att-face { cursor: default; }
+
+/* ── 이름 알약 (셀형) ──────────────────────────────────── */
+.att-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.att-chip {
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  user-select: none; -webkit-user-select: none;
+  position: relative; cursor: pointer; font-family: inherit;
+  padding: 7px 13px; font-size: 14.5px; font-weight: 600; letter-spacing: -.2px;
+  border-radius: 999px; border: 1px solid var(--border-strong);
+  background: var(--surface); color: var(--text-muted);
+  transition: background .16s, color .16s, border-color .16s, transform .12s;
+}
+.att-chip.on {
+  background: var(--good); border-color: var(--good); color: #fff;
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--good) 34%, transparent);
+}
+.att-chip.press { transform: scale(.94); }
+.att-chip.tap1 { border-color: var(--series-1); box-shadow: 0 0 0 3px var(--series-1-soft); }
+.att-chip.memo::after {
+  content: ""; position: absolute; top: 4px; right: 6px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--series-2);
+}
+
+/* ── 목록형 ────────────────────────────────────────────── */
+.att-row {
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  user-select: none; -webkit-user-select: none; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 10px; border: 1px solid transparent;
+}
+.att-row + .att-row { margin-top: 2px; }
+.att-row.on { background: color-mix(in srgb, var(--good) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--good) 30%, var(--border)); }
+.att-dot { flex: none; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--axis); }
+.att-row.on .att-dot { background: var(--good); }
+.att-nm { font-size: 14.5px; font-weight: 620; }
+.att-sub { font-size: 11.5px; color: var(--text-muted); }
+.att-pin { font-size: 11px; color: var(--series-2); }
+.att-st { margin-left: auto; font-size: 11.5px; color: var(--text-muted); }
+.att-row.on .att-st { color: var(--good); font-weight: 650; }
+
+/* ── 사진형 ────────────────────────────────────────────── */
+.att-faces { display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); }
+.att-face {
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  user-select: none; -webkit-user-select: none; cursor: pointer;
+  display: grid; justify-items: center; gap: 4px; padding: 7px 2px;
+  border-radius: 12px; border: 1px solid transparent;
+}
+.att-face span { font-size: 12.5px; font-weight: 600; }
+.att-face .ava { opacity: .45; filter: grayscale(.7); transition: opacity .16s, filter .16s; }
+.att-face.on .ava { opacity: 1; filter: none; box-shadow: 0 0 0 2.5px var(--good); }
+.att-face.on { background: color-mix(in srgb, var(--good) 10%, transparent); }
+.att-face.press { transform: scale(.95); }
+
+/* ── 결석자 심방 ───────────────────────────────────────── */
+.att-visit + .att-visit { margin-top: 3px; }
+.att-memo-b {
+  margin-left: auto; flex: none; border: 1px solid var(--border-strong);
+  background: var(--surface); color: var(--text-secondary); cursor: pointer;
+  font-family: inherit; font-size: 11.5px; font-weight: 600;
+  padding: 3px 10px; border-radius: 999px;
+}
+.att-memo-p {
+  margin: 1px 0 0 26px; padding: 5px 10px; font-size: 12.5px; line-height: 1.55;
+  color: var(--text-secondary); border-left: 2px solid var(--series-2);
+  background: color-mix(in srgb, var(--series-2) 7%, transparent);
+  border-radius: 0 8px 8px 0;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.att-memo { margin: 5px 0 2px 26px; display: grid; gap: 6px; }
+.att-memo[hidden], .att-memo-p[hidden] { display: none; }
+.att-memo textarea { font-size: 13.5px; line-height: 1.55; resize: vertical; }
+.att-memo-f { display: flex; align-items: center; gap: 7px; }
+.att-memo-f small { flex: 1; font-size: 11px; color: var(--text-muted); }
+
+/* ── 지난 기록 ─────────────────────────────────────────── */
+.att-log { display: grid; gap: 2px; max-height: 58vh; overflow: auto; }
+.att-log-r {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
+  padding: 9px 11px; border: 0; border-radius: 10px; cursor: pointer;
+  background: transparent; font-family: inherit; color: inherit;
+}
+.att-log-r:hover { background: var(--surface-2); }
+.att-log-r b { font-size: 14px; font-weight: 650; white-space: nowrap; }
+.att-log-r span { font-size: 12.5px; color: var(--text-secondary); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.att-log-r small { margin-left: auto; flex: none; font-size: 11px; color: var(--text-muted); }
+
+.att-foot { margin-top: 14px; font-size: 11.5px; color: var(--text-muted); text-align: center; }
+
+/* ── 당겨서 새로고침 ───────────────────────────────────── */
+.att-pull {
+  height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  transition: height .18s ease;
+}
+.att-pull .att-quote {
+  font-size: 12.5px; line-height: 1.5; text-align: center; padding: 0 22px;
+  color: var(--text-secondary); opacity: .65; transition: opacity .18s;
+}
+.att-pull.ready .att-quote, .att-pull.run .att-quote { opacity: 1; }
+.att-pull.run .att-quote { animation: attQuote .9s ease; }
+@keyframes attQuote { from { transform: translateY(-4px); } to { transform: none; } }
+
+/* ── 꽃 터지는 효과 ────────────────────────────────────── */
+.att-fx { position: fixed; inset: 0; pointer-events: none; z-index: 2000; }
+.att-fx span {
+  position: fixed; font-size: 15px; line-height: 1;
+  transform: translate(-50%, -50%);
+  animation: attPetal .72s cubic-bezier(.2, .7, .3, 1) forwards;
+}
+@keyframes attPetal {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(.4); }
+  22%  { opacity: 1; }
+  100% { opacity: 0;
+         transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.05) rotate(28deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .att-fx span { animation-duration: .01s; }
+  .att-chip, .att-face { transition: none; }
+}
+
+/* ── 휴대폰 ────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .att-bar { margin-left: -12px; margin-right: -12px; padding-left: 12px; padding-right: 12px; }
+  .att-row2 { gap: 5px; }
+  .att-find { flex: 1 1 100%; order: -1; }
+  .att-chip { padding: 8px 14px; font-size: 15px; }
+  .att-seg button { padding: 4px 8px; }
+}
+
+/* ── 인쇄 (컴퓨터에서만 단추가 보입니다) ────────────────── */
+@media print {
+  .att-bar, .att-pull, .att-foot, .att-locked, .att-all, .att-fx { display: none !important; }
+  .att-cell { break-inside: avoid; }
+  .att-chip { border: 1px solid #999 !important; background: #fff !important; color: #000 !important;
+              box-shadow: none !important; }
+  .att-chip.on { background: #000 !important; color: #fff !important; }
+}
+
+/* 출석부(휴대폰) — 위 채널은 같이 굴러가고, 출석부 머리띠만 붙어 있습니다 */
+@media (max-width: 640px) {
+  body.att-page .topbar { position: static; }
+}
+
+/* ── «공사중» 표시 ──────────────────────────────────────── */
+.nav-tag {
+  margin-left: 5px; padding: 1px 6px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: -.2px; vertical-align: 1.5px;
+  background: color-mix(in srgb, var(--warning) 26%, var(--surface));
+  color: color-mix(in srgb, var(--warning) 62%, var(--text-primary));
+  border: 1px solid color-mix(in srgb, var(--warning) 46%, transparent);
+}
+.nav a.active .nav-tag {
+  background: color-mix(in srgb, var(--warning) 88%, var(--surface));
+  color: #241a00; border-color: transparent;
+}
+.att-wip {
+  display: flex; align-items: flex-start; gap: 9px;
+  margin: 0 0 10px; padding: 9px 13px; border-radius: 12px;
+  font-size: 12.5px; line-height: 1.6; color: var(--text-secondary);
+  background: color-mix(in srgb, var(--warning) 13%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warning) 36%, var(--border));
+}
+.att-wip-t {
+  flex: none; margin-top: 1px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; white-space: nowrap;
+  background: color-mix(in srgb, var(--warning) 88%, var(--surface)); color: #241a00;
+}
+.att-wip b { color: var(--text-primary); font-weight: 650; }
+@media print { .att-wip { display: none !important; } }

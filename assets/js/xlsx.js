@@ -6,6 +6,7 @@ import {
   state, birthdayList, versionCells, currentVersion, cellMembers, cellNameOf, cellRoleOf, roleRank,
   birthYearOf,
   gradeOf, statusOf, isGraduated,
+  dateLabel, eventName, weekOfMonth,
 } from "./data.js";
 import { toast, loadScript } from "./ui.js";
 import { GROUP_NAME, GRADES } from "./config.js";
@@ -259,6 +260,47 @@ export async function exportTeachers({ masked = false } = {}) {
     saveWorkbook(X, wb, fileName("교사간사"));
     toast(masked ? "전화번호를 뺀 명단을 내려받았습니다. 전체는 로그인 후 받을 수 있습니다."
                  : "엑셀로 내려받았습니다.");
+  } catch (e) {
+    console.error(e);
+    toast("엑셀을 만들지 못했습니다: " + e.message, "err");
+  }
+}
+
+/** 출석부 한 모임을 엑셀로 — «명단» 시트 + «요약» 시트
+ *  (컴퓨터에서만 단추가 보입니다) */
+export async function exportAttendance(ev, groups, marks) {
+  try {
+    const X = await loadXLSX();
+    const wb = X.utils.book_new();
+    const on = (id) => marks.get(id)?.present === true;
+    const memo = (id) => marks.get(id)?.memo || "";
+    const label = dateLabel(ev.held_on);
+    const what = ev.title ? `${ev.kind} ${ev.title}` : ev.kind;
+
+    const rows = [[`${label}  ${what}`], [], ["셀", "이름", "학년", "출결", "결석자 심방", "적은 사람"]];
+    let inn = 0, tot = 0;
+    for (const g of groups) {
+      for (const s of g.kids) {
+        tot += 1; if (on(s.id)) inn += 1;
+        rows.push([g.name, s.name, gradeOf(s) || "", on(s.id) ? "출석" : "결석",
+                   memo(s.id), marks.get(s.id)?.memo_by || ""]);
+      }
+    }
+    add(X, wb, "명단", rows, [10, 12, 8, 7, 42, 12]);
+
+    const sum = [["셀", "인원", "출석", "결석", "출석률"]];
+    for (const g of groups) {
+      const i = g.kids.filter((s) => on(s.id)).length;
+      sum.push([g.name, g.kids.length, i, g.kids.length - i,
+                g.kids.length ? Math.round((i / g.kids.length) * 100) + "%" : "-"]);
+    }
+    sum.push([], ["합계", tot, inn, tot - inn, tot ? Math.round((inn / tot) * 100) + "%" : "-"]);
+    add(X, wb, "요약", sum, [12, 7, 7, 7, 9]);
+
+    const stamp = String(ev.held_on).replace(/-/g, "");
+    saveWorkbook(X, wb, [GROUP_NAME, "출석부", what.replace(/\s+/g, ""), stamp]
+      .filter(Boolean).join("_") + ".xlsx");
+    toast("출석부를 엑셀로 내려받았습니다.");
   } catch (e) {
     console.error(e);
     toast("엑셀을 만들지 못했습니다: " + e.message, "err");

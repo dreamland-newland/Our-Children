@@ -5,6 +5,7 @@ import { initData, api, state, isConfigured, isLoggedIn, isAdmin, teacherPhotoOf
 import { esc, toast, confirmDialog, installTelCopy, avatar } from "./ui.js";
 import * as overview from "./views/overview.js";
 import * as students from "./views/students.js";
+import * as attendance from "./views/attendance.js";
 import * as cells from "./views/cells.js";
 import * as birthdays from "./views/birthdays.js";
 import * as promoted from "./views/promoted.js";
@@ -17,6 +18,9 @@ import { initInstallPrompt, nudgeInstallPrompt } from "./pwa.js";
 const ROUTES = {
   // «개요»는 화면 목록(위 채널)에는 두지 않습니다 — 왼쪽 위 로고를 누르면 바로 옵니다.
   "/":          { title: "개요",       view: { html: overview.overviewView, mount: overview.mount } },
+  //  «공사중» — 아직 시험 중인 화면에는 tag 를 달아 둡니다. 다 되면 이 한 칸만 지우면 됩니다.
+  "/attend":    { title: "출석부",     nav: "출석부",    view: attendance, staffOnly: true, group: "attend",
+                  tag: "공사중" },
   "/students":  { title: "주소록",     nav: "주소록",    view: students,  group: "roster" },
   "/cells":     { title: "셀편성",     nav: "셀편성",    view: cells,     group: "roster" },
   "/birthdays": { title: "생일",       nav: "생일",      view: birthdays, group: "roster" },
@@ -98,7 +102,8 @@ function renderNav(path) {
     .map(([p, r]) => {
       const sep = lastGroup && r.group && r.group !== lastGroup ? '<span class="nav-sep"></span>' : "";
       lastGroup = r.group || lastGroup;
-      return sep + `<a href="#${p}" data-route="${p}"${p === path ? ' class="active"' : ""}>${esc(r.nav)}</a>`;
+      return sep + `<a href="#${p}" data-route="${p}"${p === path ? ' class="active"' : ""}>${esc(r.nav)}`
+        + (r.tag ? `<span class="nav-tag">${esc(r.tag)}</span>` : "") + `</a>`;
     })
     .join("");
 }
@@ -134,6 +139,7 @@ window.addEventListener("hashchange", () => {
   resetSignup();
   if (location.hash !== "#/forgot") resetForgot();
   if (location.hash !== "#/cells") cells.parkDraft();
+  if (location.hash !== "#/attend") attendance.stopWatch();
   render();
 });
 

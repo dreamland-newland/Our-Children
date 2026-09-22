@@ -192,6 +192,7 @@ const SETTINGS_SECTIONS = [
   { key: "signup",   icon: "🔐", label: "가입 신청 설정",   desc: "신청을 받을지 말지", render: paneSignup },
   { key: "notify",   icon: "🔔", label: "알림 설정",        desc: "가입 신청 메일 받을 주소", render: paneNotify },
   { key: "roles",    icon: "🏷️", label: "직함 관리",        desc: "구분 추가 · 이름 변경 · 차례", render: paneRoles },
+  { key: "quotes",   icon: "💬", label: "출석부 문구",      desc: "당겨서 새로고침할 때 뜨는 말", render: paneQuotes },
 ];
 
 const isPhone = () => window.matchMedia("(max-width: 640px)").matches;
@@ -281,6 +282,54 @@ export function openAdminSettings(after, initial = "accounts") {
 }
 
 // ── 직함 관리 (담임목사·교역자 등, 관리자가 늘리고 줄이고 이름 바꾸기) ──
+// ── 출석부 문구 ─────────────────────────────────────────────
+//   출석부를 «아래로 당겨» 새로고침할 때 하나씩 뜹니다.
+//   성경 번역문은 저작권이 있어 프로그램 안에 넣어 두지 않았습니다 —
+//   교회에서 쓰실 말씀·응원 문구를 여기에 직접 넣어 두시면 됩니다.
+function paneQuotes(pane, after) {
+  const draw = () => {
+    const list = state.attendQuotes || [];
+    pane.innerHTML = `
+      <div class="form-note" style="margin-top:0">
+        출석부 화면을 <b>아래로 당기면</b> 여기 적어 둔 문구가 하나씩 무작위로 뜹니다.
+        말씀 구절을 적어 두셔도 되고, 선생님들께 드리는 응원 한마디를 적어 두셔도 됩니다.
+        ${!state.attendReady ? `<div style="margin-top:6px;color:var(--critical)">
+          출석부가 아직 켜지지 않았습니다 — <b>supabase/10_attendance.sql</b> 을 한 번 실행해 주세요.</div>` : ""}
+      </div>
+      <div class="role-list">
+        ${list.map((q) => `
+        <div class="role-row">
+          <b class="role-name" style="font-weight:500;white-space:normal;line-height:1.55">${esc(q.text)}</b>
+          <div class="role-acts">
+            <button type="button" class="btn btn-sm btn-danger" data-qdel="${q.id}">삭제</button>
+          </div>
+        </div>`).join("") || `<div class="empty" style="padding:20px 0">아직 문구가 없습니다.</div>`}
+      </div>
+      <div class="role-add">
+        <input type="text" id="newQuote" placeholder="새 문구 (예: 오늘도 이름을 불러 주셔서 고맙습니다)">
+        <button type="button" class="btn btn-primary btn-sm" id="addQuote">추가</button>
+      </div>`;
+
+    const add = async () => {
+      const el = pane.querySelector("#newQuote");
+      const v = el.value.trim();
+      if (!v) return;
+      try { await api.addQuote(v); draw(); after?.(); toast("문구를 넣었습니다."); }
+      catch (e) { toast(e.message, "err"); }
+    };
+    pane.querySelector("#addQuote").addEventListener("click", add);
+    pane.querySelector("#newQuote").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); add(); }
+    });
+    pane.querySelectorAll("[data-qdel]").forEach((b) => b.addEventListener("click", async () => {
+      if (!(await confirmDialog("이 문구를 지울까요?"))) return;
+      try { await api.deleteQuote(b.dataset.qdel); draw(); after?.(); }
+      catch (e) { toast(e.message, "err"); }
+    }));
+  };
+  draw();
+}
+
 function paneRoles(pane, after) {
   const draw = () => {
     const list = [...state.roleOptions].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));

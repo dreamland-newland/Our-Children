@@ -23,7 +23,49 @@ export const state = {
   pending: null,         // 승인 대기 중인 신청 (로그인은 안 된 상태)
   pendingCount: 0,       // 관리자가 처리해야 할 가입 신청 수
   roleOptions: [],       // 교사·간사 직함 목록 [{id,label,sort_order}] (관리자가 추가/삭제/수정)
+
+  // ── 출석부 (supabase/10_attendance.sql) ──
+  attendReady: false,    // 출석부 표가 서버에 만들어져 있는가
+  attendEvents: [],      // 모임 목록 (최근 것부터) — 주일예배·수련회·행사
+  attendQuotes: [],      // 당겨서 새로고침할 때 뜨는 문구 (관리자가 관리)
 };
+
+// ════════════════════════════════════════════════════════════
+//  출석부 — 날짜 이름표
+//  «9/20 (9월 3주차)» 처럼 적습니다.
+//  주차는 «그 달의 몇 번째 같은 요일인가» 로 셉니다.
+//  (일요일이면 곧 «몇째 주일» 이 됩니다 — 6일=1주차, 13일=2주차, 20일=3주차 …)
+// ════════════════════════════════════════════════════════════
+export const ymd = (d = new Date()) => {
+  const t = new Date(d);
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+};
+export const parseYmd = (s) => {
+  const [y, m, d] = String(s).split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+};
+export const weekOfMonth = (s) => Math.ceil(parseYmd(s).getDate() / 7);
+const WD = ["일", "월", "화", "수", "목", "금", "토"];
+/** «9/20 (9월 3주차)» */
+export function dateLabel(s) {
+  const d = parseYmd(s);
+  return `${d.getMonth() + 1}/${d.getDate()} (${d.getMonth() + 1}월 ${weekOfMonth(s)}주차)`;
+}
+/** «9/20 (일)» — 좁은 자리에 쓰는 짧은 이름표 */
+export const dateShort = (s) => {
+  const d = parseYmd(s);
+  return `${d.getMonth() + 1}/${d.getDate()} (${WD[d.getDay()]})`;
+};
+/** 모임 한 줄 이름 — 주일예배는 종류만, 행사·수련회는 이름까지 */
+export const eventName = (ev) =>
+  !ev ? "" : (ev.title ? `${ev.kind} · ${ev.title}` : ev.kind);
+/** 그 날짜가 속한 «그 주 일요일» (일요일이면 그날 그대로) */
+export function sundayOf(d = new Date()) {
+  const t = new Date(d); t.setHours(12, 0, 0, 0);
+  t.setDate(t.getDate() - t.getDay());
+  return ymd(t);
+}
+export const ATTEND_KINDS = ["주일예배", "수련회", "행사"];
 
 // 교회에 아직 직함 목록이 없을 때(맨 처음) 채워 두는 기본값
 export const DEFAULT_ROLE_OPTIONS = ["담임목사", "교역자", "사모", "교사", "간사"];
@@ -169,6 +211,97 @@ const supabaseAdapter = {
     await this.loadTeacherPhotoUrls();
     await this.loadPendingCount();
     await this.loadRoleOptions();
+    await this.loadAttendance();
+  },
+
+  // ── 출석부 ────────────────────────────────────────────
+  //   supabase/10_attendance.sql 을 아직 실행하지 않은 교적부에서도
+  //   다른 화면은 그대로 열리도록, 표가 없으면 조용히 «아직 꺼짐» 으로 둡니다.
+  async loadAttendance() {
+    state.attendReady = false; state.attendEvents = []; state.attendQuotes = [];
+    if (!isLoggedIn()) return;
+    const { data, error } = await sb.from("attend_events").select("*")
+      .order("held_on", { ascending: false }).limit(500);
+    if (error) return;
+    state.attendReady = true;
+    state.attendEvents = data || [];
+    const q = await sb.from("attend_quotes").select("*").order("sort_order");
+    if (!q.error) state.attendQuotes = q.data || [];
+  },
+
+  /** 그 날짜·종류의 모임을 찾고, 없으면 만듭니다 (동시에 둘이 눌러도 하나만 생깁니다) */
+  async openEvent({ held_on, kind = "주일예배", title = "" }) {
+    const find = () => sb.from("attend_events").select("*")
+      .eq("held_on", held_on).eq("kind", kind).eq("title", title || "").maybeSingle();
+    let { data, error } = await find();
+    if (error) throw new Error(translate(error.message));
+    if (!data) {
+      const ins = await sb.from("attend_events")
+        .insert({ held_on, kind, title: title || "", created_by_name: state.profile?.name || null })
+        .select().single();
+      if (ins.error) {
+        ({ data } = await find());                 // 찰나에 다른 분이 먼저 만든 경우
+        if (!data) throw new Error(translate(ins.error.message));
+      } else data = ins.data;
+    }
+    upsertLocalEvent(data);
+    return data;
+  },
+
+  async saveEvent(row) {
+    const { data, error } = await sb.from("attend_events")
+      .update({ ...row, updated_by_name: state.profile?.name || null }).eq("id", row.id)
+      .select().single();
+    if (error) throw new Error(translate(error.message));
+    upsertLocalEvent(data);
+    return data;
+  },
+  async deleteEvent(id) {
+    const { error } = await sb.from("attend_events").delete().eq("id", id);
+    if (error) throw new Error(translate(error.message));
+    state.attendEvents = state.attendEvents.filter((e) => e.id !== id);
+  },
+
+  async listMarks(eventId) {
+    const { data, error } = await sb.from("attend_marks").select("*").eq("event_id", eventId);
+    if (error) throw new Error(translate(error.message));
+    return data || [];
+  },
+  /** 한 아이의 «왔다/안 왔다» 또는 심방 기록을 저장합니다 */
+  async mark(eventId, studentId, patch) {
+    const row = { event_id: eventId, student_id: studentId, ...patch,
+                  marked_by_name: state.profile?.name || null,
+                  marked_at: new Date().toISOString() };
+    const { data, error } = await sb.from("attend_marks")
+      .upsert(row, { onConflict: "event_id,student_id" }).select().single();
+    if (error) throw new Error(translate(error.message));
+    return data;
+  },
+  /** 셀 하나를 한꺼번에 (전체 출석 / 전체 결석) */
+  async markMany(eventId, studentIds, present) {
+    if (!studentIds.length) return [];
+    const now = new Date().toISOString();
+    const rows = studentIds.map((student_id) => ({
+      event_id: eventId, student_id, present,
+      marked_by_name: state.profile?.name || null, marked_at: now }));
+    const { data, error } = await sb.from("attend_marks")
+      .upsert(rows, { onConflict: "event_id,student_id" }).select();
+    if (error) throw new Error(translate(error.message));
+    return data || [];
+  },
+
+  async addQuote(text) {
+    const t = String(text || "").trim();
+    if (!t) throw new Error("문구를 적어 주세요.");
+    const next = Math.max(0, ...state.attendQuotes.map((q) => q.sort_order || 0)) + 1;
+    const { error } = await sb.from("attend_quotes").insert({ text: t, sort_order: next });
+    if (error) throw new Error(translate(error.message));
+    await this.loadAttendance();
+  },
+  async deleteQuote(id) {
+    const { error } = await sb.from("attend_quotes").delete().eq("id", id);
+    if (error) throw new Error(translate(error.message));
+    state.attendQuotes = state.attendQuotes.filter((q) => q.id !== id);
   },
 
   /** 직함 목록 — supabase/08_role_options.sql 을 실행하지 않은 교적부에서도 화면이 열리도록 */
@@ -450,6 +583,11 @@ function translate(msg = "") {
       && (m.includes("does not exist") || m.includes("could not find") || m.includes("schema cache")))
     return "이 기능은 아직 켜지지 않았습니다. 관리자가 Supabase SQL Editor 에서 " +
            "supabase/09_password_reset.sql 을 한 번 실행해 주세요.";
+  // 10_attendance.sql 을 아직 실행하지 않은 경우
+  if (m.includes("attend_") && (m.includes("does not exist") || m.includes("could not find")
+      || m.includes("schema cache")))
+    return "출석부가 아직 켜지지 않았습니다. 관리자가 Supabase SQL Editor 에서 " +
+           "supabase/10_attendance.sql 을 한 번 실행해 주세요.";
   if (m.includes("teachers_role_check"))
     return "예전 설정이 남아 있어 새 직함을 쓸 수 없습니다. " +
            "Supabase SQL Editor 에서 supabase/08_role_options.sql 을 한 번 실행해 주세요.";
@@ -517,6 +655,92 @@ const demoAdapter = {
     state.pendingCount = isAdmin()
       ? demo.accounts.filter((a) => a.approved === false).length : 0;
     state.roleOptions = [...demo.roleOptions].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    await this.loadAttendance();
+  },
+
+  // ── 출석부 (데모) ─────────────────────────────────────
+  async loadAttendance() {
+    demo.attend_events ||= [];
+    demo.attend_marks ||= [];
+    if (!demo.attend_quotes?.length)
+      demo.attend_quotes = [
+        "오늘도 한 명 한 명 이름을 불러 주셔서 고맙습니다.",
+        "빠진 아이 한 명이 오늘의 기도 제목입니다.",
+        "출석은 숫자가 아니라 얼굴입니다.",
+        "수고하셨어요. 오늘도 잘 하고 계십니다.",
+      ].map((text, i) => ({ id: uid(), text, sort_order: i + 1 }));
+    state.attendReady = isLoggedIn();
+    state.attendEvents = isLoggedIn()
+      ? [...demo.attend_events].sort((a, b) => String(b.held_on).localeCompare(String(a.held_on))) : [];
+    state.attendQuotes = isLoggedIn()
+      ? [...demo.attend_quotes].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)) : [];
+    this.persist();
+  },
+
+  async openEvent({ held_on, kind = "주일예배", title = "" }) {
+    if (!state.profile) throw new Error("로그인이 필요합니다.");
+    let ev = demo.attend_events.find(
+      (e) => e.held_on === held_on && e.kind === kind && (e.title || "") === (title || ""));
+    if (!ev) {
+      ev = { id: uid(), held_on, kind, title: title || "", note: null,
+             created_at: new Date().toISOString(), created_by_name: state.profile.name || null };
+      demo.attend_events.push(ev);
+      this.persist();
+    }
+    upsertLocalEvent(ev);
+    return ev;
+  },
+  async saveEvent(row) {
+    if (!state.profile) throw new Error("로그인이 필요합니다.");
+    const i = demo.attend_events.findIndex((e) => e.id === row.id);
+    if (i < 0) throw new Error("모임을 찾을 수 없습니다.");
+    demo.attend_events[i] = { ...demo.attend_events[i], ...row,
+                              updated_by_name: state.profile.name || null };
+    this.persist();
+    upsertLocalEvent(demo.attend_events[i]);
+    return demo.attend_events[i];
+  },
+  async deleteEvent(id) {
+    if (!state.profile) throw new Error("로그인이 필요합니다.");
+    demo.attend_events = demo.attend_events.filter((e) => e.id !== id);
+    demo.attend_marks = demo.attend_marks.filter((m) => m.event_id !== id);
+    state.attendEvents = state.attendEvents.filter((e) => e.id !== id);
+    this.persist();
+  },
+  async listMarks(eventId) {
+    return (demo.attend_marks || []).filter((m) => m.event_id === eventId).map((m) => ({ ...m }));
+  },
+  async mark(eventId, studentId, patch) {
+    if (!state.profile) throw new Error("로그인이 필요합니다.");
+    demo.attend_marks ||= [];
+    const i = demo.attend_marks.findIndex((m) => m.event_id === eventId && m.student_id === studentId);
+    const base = i >= 0 ? demo.attend_marks[i]
+                        : { id: uid(), event_id: eventId, student_id: studentId, present: true };
+    const row = { ...base, ...patch, marked_by_name: state.profile.name || null,
+                  marked_at: new Date().toISOString() };
+    if (i >= 0) demo.attend_marks[i] = row; else demo.attend_marks.push(row);
+    this.persist();
+    return { ...row };
+  },
+  async markMany(eventId, studentIds, present) {
+    const out = [];
+    for (const sid of studentIds) out.push(await this.mark(eventId, sid, { present }));
+    return out;
+  },
+  async addQuote(text) {
+    if (!state.profile?.is_admin) throw new Error("문구 관리는 관리자만 할 수 있습니다.");
+    const t = String(text || "").trim();
+    if (!t) throw new Error("문구를 적어 주세요.");
+    const next = Math.max(0, ...demo.attend_quotes.map((q) => q.sort_order || 0)) + 1;
+    demo.attend_quotes.push({ id: uid(), text: t, sort_order: next });
+    this.persist();
+    await this.loadAttendance();
+  },
+  async deleteQuote(id) {
+    if (!state.profile?.is_admin) throw new Error("문구 관리는 관리자만 할 수 있습니다.");
+    demo.attend_quotes = demo.attend_quotes.filter((q) => q.id !== id);
+    state.attendQuotes = state.attendQuotes.filter((q) => q.id !== id);
+    this.persist();
   },
 
   /** demo.roleOptions 를 고친 뒤에는 늘 이걸 불러서 state.roleOptions 도 같이 맞춰 둡니다
@@ -858,6 +1082,16 @@ const demoAdapter = {
   reset() { localStorage.removeItem(DEMO_KEY); },
 };
 
+/** 화면이 들고 있는 모임 목록에 새 모임을 끼워 넣거나 갱신합니다 */
+function upsertLocalEvent(ev) {
+  const i = state.attendEvents.findIndex((e) => e.id === ev.id);
+  if (i >= 0) state.attendEvents[i] = ev;
+  else {
+    state.attendEvents.push(ev);
+    state.attendEvents.sort((a, b) => String(b.held_on).localeCompare(String(a.held_on)));
+  }
+}
+
 const publicProfile = (a) => ({
   id: a.id, username: a.username, name: a.name, phone: a.phone,
   teacher_id: a.teacher_id, is_admin: a.is_admin, approved: a.approved !== false,
@@ -932,6 +1166,17 @@ export const api = {
   renameRoleOption: (id, label) => adapter.renameRoleOption(id, label),
   deleteRoleOption: (id) => adapter.deleteRoleOption(id),
   moveRoleOption: (id, dir) => adapter.moveRoleOption(id, dir),
+
+  // ── 출석부 ──
+  reloadAttendance: () => adapter.loadAttendance(),
+  openEvent: (o) => adapter.openEvent(o),
+  saveEvent: (r) => adapter.saveEvent(r),
+  deleteEvent: (id) => adapter.deleteEvent(id),
+  listMarks: (eid) => adapter.listMarks(eid),
+  mark: (eid, sid, patch) => adapter.mark(eid, sid, patch),
+  markMany: (eid, sids, present) => adapter.markMany(eid, sids, present),
+  addQuote: (t) => adapter.addQuote(t),
+  deleteQuote: (id) => adapter.deleteQuote(id),
 };
 
 // ── 파생 데이터 ──────────────────────────────────────────
