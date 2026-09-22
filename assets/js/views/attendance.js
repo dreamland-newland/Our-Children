@@ -43,14 +43,14 @@ export function stopWatch() {
 // ── «언제 맞췄는지» ─────────────────────────────────────────
 /** 방금 · 3분 전 · 1시간 전 … */
 function agoText(t) {
-  if (!t) return "아직 안 맞춤";
+  if (!t) return "아직 새로고침 전";
   const m = Math.floor((Date.now() - t) / 60000);
-  if (m < 1) return "방금 맞췄습니다";
-  if (m < 60) return `${m}분 전 기준`;
+  if (m < 1) return "방금 새로고침했습니다";
+  if (m < 60) return `${m}분 전에 새로고침`;
   const h = Math.floor(m / 60);
-  return h < 24 ? `${h}시간 전 기준` : "한참 전 기준";
+  return h < 24 ? `${h}시간 전에 새로고침` : "한참 전에 새로고침";
 }
-const syncText = () => (live ? "실시간으로 맞추는 중" : agoText(syncedAt));
+const syncText = () => (live ? "실시간으로 함께 보는 중" : agoText(syncedAt));
 
 /** 화면 전체를 다시 그리지 않고 그 한 줄만 고쳐 씁니다 (보던 자리가 튀지 않게) */
 function paintSync() {
@@ -128,7 +128,8 @@ export function html() {
 
   const c = counts();
   const groups = shown();
-  const desk = isDesktop();
+  const desk = isDesktop();                         // 마우스가 있는 «컴퓨터» 인가
+  const roomy = desk || window.innerWidth > 700;    // 태블릿처럼 화면이 넓은가
 
   return `
   <div class="att" id="att">
@@ -166,7 +167,7 @@ export function html() {
         ${canEdit() ? "" : `<button class="att-lock" id="attEdit">✏️ 수정</button>`}
       </div>
       <div class="att-row2">
-        ${desk || searchOpen || query ? `
+        ${roomy || searchOpen || query ? `
         <label class="att-find">
           ${ICO.find}
           <input id="attQ" type="search" placeholder="이름 찾기" value="${esc(query)}" autocomplete="off">
@@ -178,6 +179,7 @@ export function html() {
           ${seg("cell", "셀", viewMode)}${seg("list", "목록", viewMode)}${seg("photo", "사진", viewMode)}
         </div>
         <button class="att-ico" id="attLog" title="지난 기록" aria-label="지난 기록">${ICO.log}</button>
+        ${desk ? `<button class="att-ico" id="attRedo" title="새로고침" aria-label="새로고침">${ICO.redo}</button>` : ""}
         ${desk ? `<button class="att-ico" id="attPrint" title="인쇄" aria-label="인쇄">${ICO.print}</button>
                   <button class="att-ico" id="attXlsx" title="엑셀 받기" aria-label="엑셀 받기">${ICO.down}</button>` : ""}
       </div>
@@ -185,7 +187,7 @@ export function html() {
       <div class="att-sync" id="attSync">
         <span class="sy-dot" id="attSyncDot"></span>
         <span id="attSyncT">${esc(syncText())}</span>
-        <span class="sy-hint">· 아래로 당기면 바로 맞춰집니다</span>
+        <span class="sy-hint">· 아래로 당겨 새로고침</span>
       </div>
     </div>
 
@@ -210,6 +212,7 @@ const ICO = {
   log:   `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 12a8.4 8.4 0 1 0 2.5-6"/><path d="M3 4.4V10h5.6"/><path d="M12 7.6V12l3.2 2"/></svg>`,
   print: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.6h10V9"/><rect x="3.4" y="9" width="17.2" height="7.6" rx="2"/><path d="M7 14h10v6.4H7z"/></svg>`,
   down:  `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6v11.2"/><path d="m7.6 10.6 4.4 4.4 4.4-4.4"/><path d="M4.4 19.6h15.2"/></svg>`,
+  redo:  `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 12a8.4 8.4 0 1 1-2.5-6"/><path d="M21 4.4V10h-5.6"/></svg>`,
 };
 
 const card = (title, inner) => `
@@ -310,6 +313,7 @@ export function mount(root, rerender) {
   redraw = rerender;
   syncEvent();
   if (ev && !marks.size) load(rerender);
+  else if (!ev) syncedAt = syncedAt || Date.now();   // 아직 아무도 표시하지 않은 날 — 맞출 게 없습니다
 
   // 날짜 옮기기
   root.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", () => {
@@ -362,6 +366,13 @@ export function mount(root, rerender) {
   wirePull(root, rerender);
 
   // 인쇄 · 엑셀 (컴퓨터에서만 단추가 보입니다)
+  root.querySelector("#attRedo")?.addEventListener("click", async (e) => {
+    const b = e.currentTarget;
+    b.classList.add("spin");
+    await refreshAll(rerender);
+    document.getElementById("attRedo")?.classList.remove("spin");
+    toast("새로고침했습니다.");
+  });
   root.querySelector("#attPrint")?.addEventListener("click", () => window.print());
   root.querySelector("#attXlsx")?.addEventListener("click", async () => {
     try {
@@ -698,6 +709,7 @@ function goto(next, rerender) {
   syncEvent();
   // 오늘(이번 주) 것은 바로 쓸 수 있고, 지난 기록은 잠가 둡니다 — «수정» 을 눌러야 열립니다
   unlocked = isToday();
+  if (!ev) syncedAt = Date.now();
   rerender();
   if (ev) load(rerender);
 }

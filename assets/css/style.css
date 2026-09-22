@@ -1420,6 +1420,8 @@ table.data.peek td.hit {
   border: 1px solid var(--border); background: var(--surface); font-size: 14px; line-height: 1;
 }
 .att-ico:hover { background: var(--surface-2); }
+.att-ico.spin svg { animation: attSpin .9s linear infinite; transform-origin: 50% 50%; }
+@keyframes attSpin { to { transform: rotate(1turn); } }
 /* 지난 기록·인쇄·엑셀 단추는 오른쪽 끝에 붙입니다 */
 .att-row2 #attLog { margin-left: auto; }
 .att-ico svg { width: 15px; height: 15px; fill: none; stroke: var(--text-secondary);
@@ -1594,7 +1596,11 @@ table.data.peek td.hit {
 .sy-dot.stale { background: var(--warning); }
 @keyframes syPulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
 .sy-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (hover: hover) and (pointer: fine) { .sy-hint { display: none; } }
+/*  마우스를 쓰는 «컴퓨터» 에서는 이 줄을 통째로 숨깁니다.
+    화면을 당겨 새로고침할 수가 없어서 안내할 것도 없고,
+    대신 머리띠 오른쪽에 새로고침 단추(↻)가 있습니다.
+    손가락으로 쓰는 태블릿에는 폰과 똑같이 나옵니다. */
+@media (hover: hover) and (pointer: fine) { .att-sync { display: none; } }
 
 /* ── 꽃 터지는 효과 ────────────────────────────────────── */
 .att-fx { position: fixed; inset: 0; pointer-events: none; z-index: 2000; }
