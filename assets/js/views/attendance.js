@@ -28,6 +28,8 @@ let unwatch = null;            // 실시간 구독 끊기
 let syncedAt = 0;              // 마지막으로 서버와 맞춘 시각
 let live = false;              // 실시간 연결이 살아 있는가
 let redraw = null;             // 화면 다시 그리기 (app.js 가 넘겨 준 것)
+let tourQueued = false;        // 처음 오신 분께 사용법을 한 번만 띄우기 위한 표시
+let wipHidden = false;         // «공사중» 안내를 이번에만 접어 둔 상태 (다시 들어오면 또 뜹니다)
 let holdRender = false;        // 당겨서 새로고침하는 동안엔 화면을 갈아엎지 않습니다
 let pendingRender = false;     //  (다 끝나고 판이 접힌 뒤에 한 번만 다시 그립니다)
 
@@ -37,6 +39,7 @@ export function stopWatch() {
   if (syncTick) { clearInterval(syncTick); syncTick = null; }
   if (unwatch) { try { unwatch(); } catch { /* 이미 끊김 */ } unwatch = null; }
   live = false;
+  wipHidden = false;             // 다시 들어오면 «공사중» 안내를 또 보여 드립니다
   document.body.classList.remove("att-page");
 }
 
@@ -133,10 +136,11 @@ export function html() {
 
   return `
   <div class="att" id="att">
-    <div class="att-wip">
+    ${wipHidden ? "" : `<div class="att-wip">
       <span class="att-wip-t">공사중</span>
       <span>아직 만들고 있는 화면입니다 — <b>정식으로 쓰기 전까지는 기록이 지워질 수 있어요.</b></span>
-    </div>
+      <button type="button" class="att-wip-x" id="attWipX" aria-label="이 안내 닫기">✕</button>
+    </div>`}
     <div class="att-pull" id="attPull">
       <div class="att-pull-in">
         <div class="att-ring" id="attRing">
@@ -171,17 +175,21 @@ export function html() {
         <label class="att-find">
           ${ICO.find}
           <input id="attQ" type="search" placeholder="이름 찾기" value="${esc(query)}" autocomplete="off">
-        </label>` : `<button class="att-ico" id="attFind" title="이름 찾기" aria-label="이름 찾기">${ICO.find}</button>`}
+        </label>` : `<button class="att-ico" id="attFind" aria-label="이름 찾기" data-tip="이름으로 찾기">${ICO.find}</button>`}
         <div class="att-seg" id="attFilter">
           ${seg("all", "전체", filter)}${seg("in", `출석 ${c.inn}`, filter)}${seg("out", `결석 ${c.out}`, filter)}
         </div>
         <div class="att-seg att-seg-i" id="attView">
           ${seg("cell", "셀", viewMode)}${seg("list", "목록", viewMode)}${seg("photo", "사진", viewMode)}
         </div>
-        <button class="att-ico" id="attLog" title="지난 기록" aria-label="지난 기록">${ICO.log}</button>
-        ${desk ? `<button class="att-ico" id="attRedo" title="새로고침" aria-label="새로고침">${ICO.redo}</button>` : ""}
-        ${desk ? `<button class="att-ico" id="attPrint" title="인쇄" aria-label="인쇄">${ICO.print}</button>
-                  <button class="att-ico" id="attXlsx" title="엑셀 받기" aria-label="엑셀 받기">${ICO.down}</button>` : ""}
+        <button class="att-ico" id="attLog" aria-label="지난 기록"
+                data-tip="지난 기록 — 다른 날짜 출석부 열기">${ICO.log}</button>
+        ${desk ? `<button class="att-ico" id="attRedo" aria-label="새로고침"
+                data-tip="새로고침 — 다른 선생님이 누른 내용 받아 오기">${ICO.redo}</button>
+                  <button class="att-ico" id="attPrint" aria-label="인쇄"
+                data-tip="인쇄 — 오늘 출석지를 종이로">${ICO.print}</button>
+                  <button class="att-ico" id="attXlsx" aria-label="엑셀 받기"
+                data-tip="엑셀 받기 — 명단·요약 두 장으로">${ICO.down}</button>` : ""}
       </div>
 
       <div class="att-sync" id="attSync">
@@ -199,9 +207,7 @@ export function html() {
     </div>
 
     <div class="att-foot">
-      ${esc(ver?.label || "")} 편성 기준 · 두 번 톡톡 치면 출석 · 꾹 누르면 신상
-      ${ev?.updated_by_name || ev?.created_by_name
-        ? ` · 마지막 기록 ${esc(ev.updated_by_name || ev.created_by_name)}` : ""}
+      <button type="button" class="att-help-btn" id="attHelp2">${ICO.help}사용법 보기</button>
     </div>
   </div>`;
 }
@@ -213,6 +219,7 @@ const ICO = {
   print: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.6h10V9"/><rect x="3.4" y="9" width="17.2" height="7.6" rx="2"/><path d="M7 14h10v6.4H7z"/></svg>`,
   down:  `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6v11.2"/><path d="m7.6 10.6 4.4 4.4 4.4-4.4"/><path d="M4.4 19.6h15.2"/></svg>`,
   redo:  `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 12a8.4 8.4 0 1 1-2.5-6"/><path d="M21 4.4V10h-5.6"/></svg>`,
+  help:  `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="M9.7 9.5a2.4 2.4 0 1 1 3.1 2.3c-.6.2-.9.7-.9 1.3v.5"/><circle cx="12" cy="16.6" r=".9" fill="currentColor" stroke="none"/></svg>`,
 };
 
 const card = (title, inner) => `
@@ -324,6 +331,18 @@ export function mount(root, rerender) {
   root.querySelector("#attPick")?.addEventListener("click", () => pickEvent(rerender));
   root.querySelector("#attEdit")?.addEventListener("click", () => { unlocked = true; rerender(); });
   root.querySelector("#attLog")?.addEventListener("click", () => openLog(rerender));
+  root.querySelector("#attHelp2")?.addEventListener("click", () => openTour());
+  //  «공사중» 안내는 ✕ 로 접어 둘 수 있습니다. 다만 아직 공사 중이니,
+  //  화면을 나갔다 다시 들어오면 또 한 번 보여 드립니다.
+  root.querySelector("#attWipX")?.addEventListener("click", () => { wipHidden = true; rerender(); });
+  root.querySelector("#attHelp2")?.addEventListener("click", () => openTour());
+  //  처음 들어오신 분께는 사용법이 저절로 한 번 열립니다.
+  //  («사용법 보기» 단추는 화면 맨 아래에 있어서, 반짝여도 눈에 띄지 않기 때문입니다.
+  //    한 번 보고 나면 다시는 저절로 열리지 않습니다.)
+  if (!tourSeen() && !tourQueued) {
+    tourQueued = true;
+    setTimeout(() => { if (location.hash === "#/attend" && !tourSeen()) openTour(); }, 700);
+  }
 
   // 찾기 · 걸러보기 · 보는 방식
   root.querySelector("#attFind")?.addEventListener("click", () => { searchOpen = true; rerender(); });
@@ -468,7 +487,12 @@ function wireTaps(body, rerender) {
 async function toggle(el, id, rerender) {
   const next = !isIn(id);
   el.classList.toggle("on", next);                   // 눈에 먼저 반영 (기다리지 않게)
-  if (next) { buzz(28); burstAt(el); } else buzz(10);
+  if (next) {
+    buzz(28); burstAt(el);
+    el.classList.remove("pop"); void el.offsetWidth; // 연달아 눌러도 다시 반짝이도록
+    el.classList.add("pop");
+    setTimeout(() => el.classList.remove("pop"), 460);
+  } else buzz(10);
   try {
     await ensureEvent();
     const row = await api.mark(ev.id, id, { present: next, ...(next ? {} : {}) });
@@ -621,6 +645,130 @@ function wirePull(root, rerender) {
   };
   root.addEventListener("touchend", end);
   root.addEventListener("touchcancel", end);
+}
+
+
+// ════════════════════════════════════════════════════════════
+//  사용법 — 손가락으로 어떻게 쓰는지 한 장씩 보여 줍니다
+//  (처음 들어오면 오른쪽 위 «?» 단추가 잠깐 반짝입니다)
+// ════════════════════════════════════════════════════════════
+const TOUR_KEY = "kkumttang.attend.tour";
+function tourSeen() {
+  try { return localStorage.getItem(TOUR_KEY) === "1"; } catch { return true; }
+}
+function markTourSeen() {
+  try { localStorage.setItem(TOUR_KEY, "1"); } catch { /* 저장 못 해도 그만 */ }
+}
+
+/** 화면마다 달라지는 «새로고침» 설명 */
+const refreshStep = () => (isDesktop()
+  ? { art: `<div class="tt-bar"><span class="tt-ico">${ICO.redo}</span></div>`,
+      title: "↻ 를 누르면 새로고침",
+      body: "다른 선생님이 방금 누른 내용까지 받아 옵니다.<br>누르지 않아도 1분마다 저절로 맞춰집니다." }
+  : { art: `<div class="tt-ring"><svg viewBox="0 0 52 52"><circle class="rg-bg" cx="26" cy="26" r="21"/>
+             <circle class="tt-arc" cx="26" cy="26" r="21"/></svg><i>🍀</i></div>`,
+      title: "아래로 당기면 새로고침",
+      body: "클로버가 다 자라면 손을 놓으세요.<br>다른 선생님이 누른 내용까지 바로 맞춰집니다." });
+
+const TOUR = () => [
+  { art: `<div class="tt-chips">
+            <span class="tt-chip">서연</span>
+            <span class="tt-chip tt-tap">하준</span>
+            <span class="tt-chip">예린</span>
+          </div>
+          <span class="tt-finger" aria-hidden="true">👆</span>`,
+    title: isDesktop() ? "이름을 두 번 클릭" : "이름을 두 번 톡톡",
+    body: "그 아이가 <b>출석</b>으로 바뀝니다."
+          + (isDesktop() ? "" : " 손끝이 살짝 울리고 꽃이 터져요.")
+          + "<br>잘못 눌렀으면 <b>다시 두 번</b> 누르면 됩니다.",
+    note: "한 번만 누르면 아무 일도 일어나지 않습니다 — 실수로 눌리는 걸 막으려고요." },
+
+  { art: `<div class="tt-chips">
+            <span class="tt-chip tt-hold">하준<span class="tt-ripple"></span></span>
+          </div>
+          <span class="tt-finger hold" aria-hidden="true">👆</span>`,
+    title: isDesktop() ? "이름을 꾹 누르고 있으면" : "이름을 꾹 누르면",
+    body: "그 아이 <b>신상</b>이 열립니다. 얼굴·학년·연락처를 바로 볼 수 있어요.",
+    note: "출석 표시는 바뀌지 않습니다. 보기만 하는 겁니다." },
+
+  { art: `<div class="tt-cell">
+            <div class="tt-ch"><b>3셀</b><span>0/5</span><em>모두 출석</em></div>
+            <div class="tt-chips sm">
+              <span class="tt-chip on">서연</span><span class="tt-chip on">하준</span>
+              <span class="tt-chip on">예린</span><span class="tt-chip on">도윤</span>
+            </div>
+          </div>`,
+    title: "셀은 통째로 한 번에",
+    body: "셀 이름 오른쪽 <b>«모두 출석»</b> 을 누르면 그 셀이 전부 출석이 됩니다.<br>" +
+          "안 온 아이만 두 번 눌러서 풀면 훨씬 빨라요." },
+
+  { art: `<div class="tt-seg"><span>전체</span><span class="on">결석</span></div>
+          <div class="tt-row"><i></i>박지훈<em>심방</em></div>
+          <div class="tt-memo">어머니 통화 — 가족 여행. 다음 주 온다고 하심</div>`,
+    title: "결석만 모아 보고, 심방 남기기",
+    body: "위에서 <b>«결석»</b> 을 누르면 안 온 아이만 모입니다.<br>" +
+          "이름 옆 <b>«심방»</b> 을 누르면 결석 사유를 적어 둘 수 있어요.",
+    note: "적어 둔 아이는 이름표에 주황색 점이 붙습니다." },
+
+  { ...refreshStep(),
+    note: "출석당번이 두 분이어도 서로 누른 게 섞이지 않습니다. 각자 누른 아이만 저장돼요." },
+
+  { art: `<div class="tt-date"><span>‹</span><b>9/20 (9월 3주차)</b><span>›</span></div>
+          <div class="tt-bar"><span class="tt-ico">${ICO.log}</span></div>`,
+    title: "지난 기록 · 수련회도",
+    body: "<b>‹ ›</b> 로 주를 옮기고, 날짜를 누르면 <b>수련회·행사</b> 도 만들 수 있습니다.<br>" +
+          "시계 단추를 누르면 지금까지 기록이 전부 나옵니다.",
+    note: "지난 기록은 잠겨서 열립니다 — «수정» 을 눌러야 고쳐져요." },
+];
+
+export function openTour() {
+  if (document.querySelector(".tt")) return () => {};   // 이미 열려 있으면 또 열지 않습니다
+  const steps = TOUR();
+  let i = 0;
+  markTourSeen();
+  document.getElementById("attHelp2")?.classList.remove("hint");
+
+  const box = document.createElement("div");
+  box.className = "tt";
+
+  const draw = () => {
+    const st = steps[i];
+    box.innerHTML = `
+      <div class="tt-art">
+        ${st.art}
+        <span class="tt-count">${i + 1} / ${steps.length}</span>
+        <button type="button" class="tt-x" data-x aria-label="닫기">✕</button>
+      </div>
+      <div class="tt-txt">
+        <h4>${st.title}</h4>
+        <p>${st.body}</p>
+        ${st.note ? `<small>${st.note}</small>` : ""}
+      </div>
+      <div class="tt-nav">
+        <span class="tt-dots">${steps.map((_, n) =>
+          `<i class="${n === i ? "on" : ""}" data-go="${n}"></i>`).join("")}</span>
+        ${i === steps.length - 1 ? "" : `<button type="button" class="tt-skip" data-x>그만 볼래요</button>`}
+        ${i > 0 ? `<button type="button" class="btn btn-sm" data-prev>이전</button>` : ""}
+        <button type="button" class="btn btn-primary btn-sm" data-next>
+          ${i === steps.length - 1 ? "다 알았어요" : "다음"}</button>
+      </div>`;
+    box.querySelector("[data-next]").addEventListener("click", () => {
+      if (i === steps.length - 1) close(); else { i += 1; draw(); }
+    });
+    box.querySelector("[data-prev]")?.addEventListener("click", () => { i -= 1; draw(); });
+    box.querySelectorAll("[data-x]").forEach((x) => x.addEventListener("click", () => close()));
+    box.querySelectorAll("[data-go]").forEach((d) => d.addEventListener("click", () => {
+      i = Number(d.dataset.go); draw();
+    }));
+  };
+
+  let close = () => {};
+  close = modal({
+    bare: true, slim: true, body: box,
+    onMount: (_, c) => { close = c; },
+  });
+  draw();
+  return close;
 }
 
 // ── 모임 고르기 · 지난 기록 ─────────────────────────────────

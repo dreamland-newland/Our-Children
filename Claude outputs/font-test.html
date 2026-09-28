@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>글꼴 고르기 · 꿈땅새땅 교적부</title>
+<link rel="stylesheet"
+  href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+:root{
+  --page:#f9f9f7; --surface:#fcfcfb; --surface-2:#f2f1ed;
+  --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10); --border-strong:rgba(11,11,11,.18);
+  --series-1:#2a78d6; --good:#0ca30c; --warning:#fab219;
+  --shadow:0 1px 2px rgba(11,11,11,.05),0 8px 24px rgba(11,11,11,.06);
+}
+@media (prefers-color-scheme:dark){:root{
+  --page:#0d0d0d; --surface:#1a1a19; --surface-2:#232322;
+  --text-primary:#fff; --text-secondary:#c3c2b7; --text-muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --border-strong:rgba(255,255,255,.18);
+  --series-1:#3987e5; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--page);color:var(--text-primary)}
+body{font-family:"Apple SD Gothic Neo",-apple-system,system-ui,"Malgun Gothic",sans-serif;
+  line-height:1.6;-webkit-font-smoothing:antialiased;padding:18px 16px 60px}
+.wrap{max-width:720px;margin:0 auto}
+h1{font-size:21px;font-weight:750;letter-spacing:-.4px;margin:0 0 6px}
+.lede{font-size:13.5px;color:var(--text-secondary);margin:0 0 14px;line-height:1.7}
+.now{display:flex;align-items:center;gap:7px;padding:9px 13px;border-radius:12px;margin-bottom:22px;
+  font-size:12.5px;line-height:1.55;background:color-mix(in srgb,var(--series-1) 8%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--series-1) 26%,var(--border))}
+.now b{font-weight:700}
+
+.card{border:1px solid var(--border);border-radius:16px;background:var(--surface);
+  margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)}
+.head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 15px;border-bottom:1px solid var(--grid);
+  background:var(--surface-2)}
+.tag{flex:none;width:23px;height:23px;border-radius:999px;display:grid;place-items:center;
+  font-size:11.5px;font-weight:750;color:#fff;background:var(--text-primary)}
+.head b{font-size:14.5px;font-weight:700;letter-spacing:-.2px;flex:1 1 auto;min-width:0}
+.head .ok{margin-left:auto;flex:none;font-size:10.5px;font-weight:650;padding:2px 8px;border-radius:999px;
+  background:var(--surface);border:1px solid var(--border-strong);color:var(--text-muted)}
+.head .ok.yes{color:var(--good);border-color:color-mix(in srgb,var(--good) 40%,transparent);
+  background:color-mix(in srgb,var(--good) 10%,var(--surface))}
+.body{padding:14px 15px 16px}
+.note{font-size:11.5px;line-height:1.6;color:var(--text-muted);margin:0 0 12px}
+.note b{color:var(--text-secondary);font-weight:650}
+
+/* 출석부 모형 — 실제 화면과 같은 치수 */
+.bar{display:flex;align-items:center;gap:6px;margin-bottom:9px}
+.bar .d{font-size:15.5px;font-weight:700;letter-spacing:-.2px}
+.bar .k{font-size:11.5px;color:var(--text-muted)}
+.bar .n{margin-left:auto;font-size:14px;font-variant-numeric:tabular-nums}
+.bar .n i{font-style:normal;font-weight:750;color:var(--good)}
+.bar .n s{text-decoration:none;color:var(--text-muted)}
+.ch{display:flex;align-items:baseline;gap:7px;padding:2px 0 5px;border-bottom:1px solid var(--grid);
+  margin-bottom:8px}
+.ch b{font-size:13.5px;font-weight:700}
+.ch span{margin-left:auto;font-size:12px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;font-size:14.5px;font-weight:600;
+  letter-spacing:-.2px;border-radius:999px;border:1px solid var(--border-strong);
+  background:var(--surface);color:var(--text-muted)}
+.chip.on{background:color-mix(in srgb,var(--good) 13%,var(--surface));
+  border-color:color-mix(in srgb,var(--good) 30%,var(--border-strong));
+  color:color-mix(in srgb,var(--good) 55%,var(--text-primary))}
+.chip.on::before{content:"";flex:none;width:5px;height:5px;border-radius:50%;background:var(--good)}
+.para{font-size:13.5px;line-height:1.7;color:var(--text-secondary);margin:0 0 8px}
+.para b{color:var(--text-primary);font-weight:700}
+.mini{font-size:11.5px;color:var(--text-muted);margin:0;font-variant-numeric:tabular-nums}
+
+/* 글꼴 후보 */
+.f1{font-family:"Apple SD Gothic Neo",-apple-system,BlinkMacSystemFont,system-ui,"Segoe UI","Malgun Gothic","Noto Sans KR",sans-serif}
+.f2{font-family:"Apple SD Gothic Neo",-apple-system,"Pretendard Variable",Pretendard,system-ui,"Malgun Gothic",sans-serif}
+.f3{font-family:"Pretendard Variable",Pretendard,-apple-system,system-ui,"Malgun Gothic",sans-serif}
+.f4{font-family:system-ui,-apple-system,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif}
+
+.foot{margin-top:26px;padding-top:16px;border-top:1px solid var(--grid);
+  font-size:12px;line-height:1.7;color:var(--text-muted)}
+.foot b{color:var(--text-secondary)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>글꼴 고르기</h1>
+  <p class="lede">
+    네 가지를 같은 화면으로 만들어 뒀습니다. <b>폰에서도 한 번, 컴퓨터에서도 한 번</b> 열어 보시고
+    마음에 드는 번호를 알려 주세요. 이름표 모양·크기는 실제 출석부와 똑같습니다.
+  </p>
+  <div class="now"><span id="dev"></span></div>
+
+  <div class="card">
+    <div class="head"><span class="tag">1</span><b>지금 그대로 — 애플고딕</b><span class="ok" id="ok1">—</span></div>
+    <div class="body f1">
+      <p class="note"><b>애플 기기</b> 애플고딕 · <b>갤럭시·윈도우</b> 맑은고딕 / 기기 기본 한글</p>
+      <div class="bar"><span class="d">9/27 (9월 4주차)</span><span class="k">주일예배</span>
+        <span class="n"><i>55</i><s>/73</s></span></div>
+      <div class="ch"><b>김지우 간사</b><span>7/9</span></div>
+      <div class="chips">
+        <span class="chip on">고선우</span><span class="chip">남궁라온</span><span class="chip on">문승현</span>
+        <span class="chip on">심정우</span><span class="chip on">이준서</span><span class="chip">정예성</span>
+        <span class="chip on">조시우</span><span class="chip on">최예준</span></div>
+      <p class="para">이름을 <b>두 번 톡톡</b> 치면 출석으로 바뀝니다. 꾹 누르면 그 아이 신상이 열려요.</p>
+      <p class="mini">2026-2학기 · 출석 55 · 결석 18 · 0123456789</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="head"><span class="tag">2</span><b>애플은 애플고딕, 나머지는 Pretendard</b><span class="ok" id="ok2">—</span></div>
+    <div class="body f2">
+      <p class="note"><b>애플 기기</b> 애플고딕 (1번과 같음) · <b>갤럭시·윈도우</b> Pretendard</p>
+      <div class="bar"><span class="d">9/27 (9월 4주차)</span><span class="k">주일예배</span>
+        <span class="n"><i>55</i><s>/73</s></span></div>
+      <div class="ch"><b>김지우 간사</b><span>7/9</span></div>
+      <div class="chips">
+        <span class="chip on">고선우</span><span class="chip">남궁라온</span><span class="chip on">문승현</span>
+        <span class="chip on">심정우</span><span class="chip on">이준서</span><span class="chip">정예성</span>
+        <span class="chip on">조시우</span><span class="chip on">최예준</span></div>
+      <p class="para">이름을 <b>두 번 톡톡</b> 치면 출석으로 바뀝니다. 꾹 누르면 그 아이 신상이 열려요.</p>
+      <p class="mini">2026-2학기 · 출석 55 · 결석 18 · 0123456789</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="head"><span class="tag">3</span><b>모든 기기에서 Pretendard</b><span class="ok" id="ok3">—</span></div>
+    <div class="body f3">
+      <p class="note"><b>모든 기기</b> Pretendard — 어느 기기에서나 글자 모양이 똑같습니다</p>
+      <div class="bar"><span class="d">9/27 (9월 4주차)</span><span class="k">주일예배</span>
+        <span class="n"><i>55</i><s>/73</s></span></div>
+      <div class="ch"><b>김지우 간사</b><span>7/9</span></div>
+      <div class="chips">
+        <span class="chip on">고선우</span><span class="chip">남궁라온</span><span class="chip on">문승현</span>
+        <span class="chip on">심정우</span><span class="chip on">이준서</span><span class="chip">정예성</span>
+        <span class="chip on">조시우</span><span class="chip on">최예준</span></div>
+      <p class="para">이름을 <b>두 번 톡톡</b> 치면 출석으로 바뀝니다. 꾹 누르면 그 아이 신상이 열려요.</p>
+      <p class="mini">2026-2학기 · 출석 55 · 결석 18 · 0123456789</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="head"><span class="tag">4</span><b>예전 상태 — 기기 기본 글꼴</b><span class="ok" id="ok4">—</span></div>
+    <div class="body f4">
+      <p class="note"><b>애플 기기</b> SF Pro + 애플고딕 · <b>갤럭시</b> 삼성 원UI 글꼴 · <b>윈도우</b> 맑은고딕</p>
+      <div class="bar"><span class="d">9/27 (9월 4주차)</span><span class="k">주일예배</span>
+        <span class="n"><i>55</i><s>/73</s></span></div>
+      <div class="ch"><b>김지우 간사</b><span>7/9</span></div>
+      <div class="chips">
+        <span class="chip on">고선우</span><span class="chip">남궁라온</span><span class="chip on">문승현</span>
+        <span class="chip on">심정우</span><span class="chip on">이준서</span><span class="chip">정예성</span>
+        <span class="chip on">조시우</span><span class="chip on">최예준</span></div>
+      <p class="para">이름을 <b>두 번 톡톡</b> 치면 출석으로 바뀝니다. 꾹 누르면 그 아이 신상이 열려요.</p>
+      <p class="mini">2026-2학기 · 출석 55 · 결석 18 · 0123456789</p>
+    </div>
+  </div>
+
+  <div class="foot">
+    <b>참고</b> — Pretendard 는 무료로 쓸 수 있는 한글 글꼴입니다(SIL OFL).
+    기기에 깔려 있지 않아도 사이트가 알아서 내려받아 씁니다(필요한 글자만 조금씩, 한 번 받으면 다시 안 받습니다).
+    <br><br>
+    이 화면에서 <b>1번과 2번이 똑같아 보이면</b> 지금 애플 기기로 보고 계신 겁니다 — 정상입니다.
+    갤럭시·윈도우에서 열면 2·3번만 다르게 보입니다.
+  </div>
+</div>
+
+<script>
+(function () {
+  var ua = navigator.userAgent || "";
+  var apple = /Mac|iPhone|iPad|iPod/.test(navigator.platform || "") || /Macintosh|iPhone|iPad|iPod/.test(ua);
+  document.getElementById("dev").innerHTML = apple
+    ? "지금 보고 계신 기기는 <b>애플(맥·아이폰·아이패드)</b> 입니다 — 1번과 2번은 똑같이 보이는 게 정상이에요."
+    : "지금 보고 계신 기기는 <b>애플이 아닌 기기(갤럭시·윈도우 등)</b> 입니다 — 네 가지가 모두 다르게 보일 거예요.";
+
+  /* 글꼴이 실제로 쓰이고 있는지 — 같은 글을 그려 보고 너비가 달라지는지로 판별합니다
+     (document.fonts.check 는 없는 글꼴에도 true 를 돌려주는 경우가 있어 쓰지 않습니다) */
+  function has(name) {
+    try {
+      var t = "가나다라마바사ABCdef0123";
+      var c = document.createElement("canvas").getContext("2d");
+      var w = {};
+      ["monospace", "serif"].forEach(function (base) {
+        c.font = "28px " + base;            w[base] = c.measureText(t).width;
+        c.font = '28px "' + name + '",' + base; w[base + "2"] = c.measureText(t).width;
+      });
+      return Math.abs(w.monospace - w.monospace2) > 0.5 && Math.abs(w.serif - w.serif2) > 0.5;
+    } catch (e) { return false; }
+  }
+  function mark(id, ok, label) {
+    var e = document.getElementById(id);
+    e.textContent = label;
+    e.className = ok ? "ok yes" : "ok";
+  }
+  function check() {
+    var hasP = has("Pretendard Variable");
+    var hasA = has("Apple SD Gothic Neo");
+    mark("ok1", hasA, hasA ? "애플고딕으로 보임" : "기기 기본 글꼴로 보임");
+    mark("ok2", apple ? hasA : hasP,
+         apple ? (hasA ? "애플고딕으로 보임" : "기기 기본 글꼴로 보임")
+               : (hasP ? "Pretendard 로 보임" : "받는 중…"));
+    mark("ok3", hasP, hasP ? "Pretendard 로 보임" : "받는 중…");
+    mark("ok4", true, "기기 기본 글꼴로 보임");
+  }
+  // 글꼴을 내려받는 데 시간이 걸릴 수 있어 몇 번 더 확인합니다
+  [300, 1200, 2500, 5000].forEach(function (t) { setTimeout(check, t); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(check);
+})();
+</script>
+</body>
+</html>
