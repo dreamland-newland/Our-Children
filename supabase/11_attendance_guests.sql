@@ -69,6 +69,18 @@ update public.attend_marks
    set marked_by_name = null
  where marked_by_name is not null;
 
+-- ============================================================
+--  모임마다 «어느 셀편성으로 묶어 볼지» 를 기억합니다
+--  ------------------------------------------------------------
+--  출석 기록 자체는 아이 한 명 한 명에 붙어 있어서, 셀을 새로 짜도
+--  사라지거나 섞이지 않습니다. 다만 «화면에서 어떻게 묶어 보여 줄지» 는
+--  그때그때 셀편성을 따라가므로, 지난 주 출석부를 열면 지금 셀로 묶여 보였습니다.
+--  이제 모임을 만들 때 그날 쓰던 편성을 적어 두고 그대로 보여 줍니다.
+--  (알파 행사처럼 임시 편성을 만들었다면, 그 모임만 임시 편성으로 볼 수 있습니다)
+-- ============================================================
+alter table public.attend_events
+  add column if not exists version_id uuid references public.cell_versions(id) on delete set null;
+
 -- ── RLS — 출석부와 똑같이, 로그인한 교사진만 ────────────────
 alter table public.attend_guests enable row level security;
 drop policy if exists attend_guests_staff on public.attend_guests;

@@ -596,9 +596,14 @@ table.data .num { font-variant-numeric: tabular-nums; color: var(--text-secondar
   display: grid; place-items: center; padding: 20px;
   animation: fade .14s ease-out;
 }
-/* 사용법 안내창은 단추 줄이 창 밖 아래에 따로 있어서 그만큼 자리를 비워 둡니다 */
-.overlay:has(.tt) { padding-bottom: 104px; }
-.overlay:has(.tt) .modal { max-height: min(78vh, 760px); }
+/*  사용법 안내창 —
+    창은 «아래 가장자리»를 고정해 두고 위로 자라게 합니다.
+    그래야 바로 밑에 붙인 단추 줄이 장마다 움직이지 않습니다. */
+.overlay:has(.tt) {
+  place-items: end center;
+  padding-bottom: 86px; padding-top: 16px;
+}
+.overlay:has(.tt) .modal { max-height: min(72vh, 680px); }
 @keyframes fade { from { opacity: 0 } }
 .modal {
   position: relative; overflow: hidden;      /* 사진이 둥근 모서리까지 꽉 차게 */
@@ -1651,6 +1656,7 @@ table.data.peek td.hit {
 .sy-dot.live { background: var(--good); animation: syPulse 2.2s ease-in-out infinite; }
 .sy-dot.stale { background: var(--warning); }
 @keyframes syPulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+.sy-ver { flex: none; font-weight: 650; color: var(--series-2); white-space: nowrap; }
 .sy-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /*  마우스를 쓰는 «컴퓨터» 에서는 이 줄을 통째로 숨깁니다.
     화면을 당겨 새로고침할 수가 없어서 안내할 것도 없고,
@@ -1803,12 +1809,7 @@ html:has(body.att-page), body.att-page { overscroll-behavior-y: contain; }
 @keyframes ttCaret { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
 .tt-add.small { width: auto; padding: 7px 14px; font-size: 14px; }
 .tt-chip.tt-g { border-style: dashed; }
-.tt-chip.tt-g.on {
-  background: color-mix(in srgb, var(--series-2) 13%, var(--surface));
-  border-color: color-mix(in srgb, var(--series-2) 40%, var(--border-strong));
-  color: color-mix(in srgb, var(--series-2) 62%, var(--text-primary));
-  border-style: solid;
-}
+.tt-chip.tt-g.on { border-style: dashed; }
 .tt-peek {
   display: flex; align-items: center; gap: 9px; width: 100%;
   padding: 8px 11px; border-radius: 12px; background: var(--surface);
@@ -1884,9 +1885,9 @@ html:has(body.att-page), body.att-page { overscroll-behavior-y: contain; }
 
 .tt-nav {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
-  display: grid; justify-items: center; gap: 9px;
-  padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(to top, rgba(11,11,11,.72) 30%, rgba(11,11,11,0));
+  display: grid; justify-items: center; gap: 8px;
+  height: 86px; align-content: start;
+  padding: 14px 16px calc(10px + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
 }
 .tt-nav > * { pointer-events: auto; }
@@ -1899,12 +1900,16 @@ html:has(body.att-page), body.att-page { overscroll-behavior-y: contain; }
 .tt-btns [hidden-slot] { visibility: hidden; pointer-events: none; }
 .tt-nav .tt-skip {
   min-width: 90px; text-align: center; font-weight: 600;
-  padding: 7px 13px; border-radius: 999px; color: rgba(255,255,255,.92);
-  background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.2);
+  padding: 7px 13px; border-radius: 999px; color: rgba(255,255,255,.95);
+  background: rgba(11,11,11,.55); border: 1px solid rgba(255,255,255,.18);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
-.tt-nav .tt-skip:hover { background: rgba(255,255,255,.26); color: #fff; text-decoration: none; }
-.tt-nav .tt-dots i { background: rgba(255,255,255,.4); box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.tt-nav .tt-skip:hover { background: rgba(11,11,11,.72); color: #fff; text-decoration: none; }
+.tt-nav .tt-dots {
+  padding: 5px 10px; border-radius: 999px; background: rgba(11,11,11,.5);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.tt-nav .tt-dots i { background: rgba(255,255,255,.45); }
 .tt-nav .tt-dots i.on { background: #fff; }
 .tt-nav .tt-dots i.done { background: var(--good); }
 .tt-nav .tt-dots i.on.done { background: var(--good); box-shadow: 0 0 0 2px rgba(255,255,255,.55); }
@@ -1988,20 +1993,20 @@ html:has(body.att-page), body.att-page { overscroll-behavior-y: contain; }
 .att-add small { font-size: 11px; font-weight: 400; color: var(--text-muted); }
 .att-add:hover { background: var(--surface-2); color: var(--text-primary); }
 
-.att-cell-guest .att-ch b { color: var(--series-2); }
+/*  색은 «왔다/안 왔다» 하나만 뜻합니다 — 초록이면 왔고, 아니면 안 온 것.
+    «처음 온 아이» 는 색이 아니라 «점선 테두리» 로만 구별합니다. */
+.att-cell-guest .att-ch b { color: var(--text-primary); }
 .att-chip-g { border-style: dashed; }
-.att-chip-g.on {
-  background: color-mix(in srgb, var(--series-2) 13%, var(--surface));
-  border-color: color-mix(in srgb, var(--series-2) 40%, var(--border-strong));
-  color: color-mix(in srgb, var(--series-2) 62%, var(--text-primary));
-  border-style: solid;
-}
-.att-chip-g.memo::after { background: var(--series-1); }
+.att-chip-g.on { border-style: dashed; }
 .att-n {
   margin-left: 5px; font-style: normal; font-size: 10.5px; font-weight: 700;
   padding: 1px 5px; border-radius: 999px; font-variant-numeric: tabular-nums;
-  background: color-mix(in srgb, var(--series-2) 18%, transparent);
-  color: color-mix(in srgb, var(--series-2) 70%, var(--text-primary));
+  background: color-mix(in srgb, var(--text-primary) 9%, transparent);
+  color: var(--text-muted);
+}
+.att-chip-g.on .att-n {
+  background: color-mix(in srgb, var(--good) 20%, transparent);
+  color: color-mix(in srgb, var(--good) 72%, var(--text-primary));
 }
 
 .att-more { margin: -2px 0 12px; }
@@ -2042,4 +2047,25 @@ html:has(body.att-page), body.att-page { overscroll-behavior-y: contain; }
   .enroll-row { gap: 6px; }
   .enroll-row > span { flex: 1 1 100%; order: 3; }
   .enroll-row .btn { flex: 1; }
+}
+
+/* ── 최근에 왔던 아이 (골라서 오늘 출석으로) ─────────────── */
+.att-past { margin-top: 10px; }
+.att-past-h {
+  display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
+  padding: 2px 2px 5px; margin-bottom: 7px;
+  border-bottom: 1px solid var(--grid);
+  font-size: 12.5px; font-weight: 650; color: var(--text-muted);
+}
+.att-past-h small { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.att-chip-past {
+  opacity: .55; border-style: dashed;
+  background: transparent; color: var(--text-muted);
+  transition: opacity .16s, background .16s, color .16s, border-color .16s, transform .12s;
+}
+.att-chip-past:hover { opacity: .9; background: var(--surface); }
+.att-chip-past:active { transform: scale(.95); }
+.att-when-s {
+  margin-left: 5px; font-style: normal; font-size: 10.5px; font-weight: 500;
+  opacity: .8; font-variant-numeric: tabular-nums;
 }

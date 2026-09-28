@@ -5,8 +5,8 @@
 //   · 지난 기록도 폰에서 보고, «수정» 을 누르면 고칠 수 있습니다.
 // ============================================================
 import {
-  state, api, isLoggedIn, isAdmin, isActive, photoOf, gradeOf, ENROLL_AFTER,
-  activeCells, cellMembers, cellRoleOf, roleRank, currentVersion,
+  state, api, isLoggedIn, isAdmin, isActive, photoOf, gradeOf, ENROLL_AFTER, GUEST_RECENT_WEEKS,
+  activeCells, cellMembers, cellRoleOf, roleRank, currentVersion, versionOn, versionLabel,
   dateLabel, dateShort, eventName, sundayOf, ymd, parseYmd, ATTEND_KINDS,
 } from "../data.js";
 import { esc, toast, modal, confirmDialog, avatar, isDesktop, byName } from "../ui.js";
@@ -73,12 +73,18 @@ const isToday = () => target.held_on === sundayOf() || target.held_on >= ymd();
 const canEdit = () => unlocked;
 
 // ── 명단 ────────────────────────────────────────────────────
+/** 이 모임을 어느 셀편성으로 묶어 볼지
+ *  · 이미 만들어진 모임이면 그때 적어 둔 편성
+ *  · 아직 없으면 그 날짜에 쓰이던 편성 */
+const rosterVersion = () => ev?.version_id || versionOn(target.held_on);
+
 /** 셀별로 묶은 아이들 (셀에 없는 아이는 맨 아래 «셀 미배정») */
 function roster() {
   const used = new Set();
-  const groups = activeCells().map((c) => {
+  const vid = rosterVersion();
+  const groups = activeCells(vid).map((c) => {
     const kids = cellMembers(c.id).filter(isActive).sort((a, b) =>
-      roleRank(cellRoleOf(a.id)) - roleRank(cellRoleOf(b.id)) || byName(a.name, b.name));
+      roleRank(cellRoleOf(a.id, vid)) - roleRank(cellRoleOf(b.id, vid)) || byName(a.name, b.name));
     kids.forEach((k) => used.add(k.id));
     return { id: c.id, name: c.name, leaders: c.leaders || [], kids };
   }).filter((g) => g.kids.length);
@@ -102,6 +108,22 @@ function guestsHere() {
     .sort((a, b) => byName(a.name, b.name));
 }
 const isGuest = (id) => state.attendGuests.some((g) => g.id === id);
+
+/** 최근 몇 주 안에 왔던 손님 중, 오늘 아직 올리지 않은 아이들
+ *  (지난주에 온 아이가 이번 주에도 왔을 때, 이름을 다시 적지 않아도 되도록) */
+function recentGuests() {
+  const end = parseYmd(target.held_on);
+  const from = new Date(end); from.setDate(from.getDate() - GUEST_RECENT_WEEKS * 7);
+  const lo = ymd(from), hi = target.held_on;
+  return state.attendGuests
+    .filter((g) => {
+      if (g.enrolled_student_id) return false;      // 교적부로 옮긴 아이는 이제 주소록에 있습니다
+      if (marks.has(g.id)) return false;            // 오늘 이미 올린 아이
+      const d = state.guestLastOn[g.id] || g.first_on;
+      return d && d >= lo && d <= hi;
+    })
+    .sort((a, b) => String(state.guestLastOn[b.id] || "").localeCompare(String(state.guestLastOn[a.id] || "")));
+}
 
 const isIn = (id) => marks.get(id)?.present === true;
 const memoOf = (id) => marks.get(id)?.memo || "";
@@ -148,7 +170,11 @@ export function html() {
 
   const c = counts();
   const groups = shown();
-  const desk = isDesktop();                         // 마우스가 있는 «컴퓨터» 인가
+  const desk = isDesktop();
+  //  지금 보고 있는 편성이 «가장 최근 편성» 과 다르면 알려 줍니다
+  const rv = rosterVersion();
+  const verNote = rv && rv !== state.versions[0]?.id
+    ? `${versionLabel(state.versions.find((v) => v.id === rv)) || "예전"} 편성으로 보는 중` : "";                         // 마우스가 있는 «컴퓨터» 인가
   const roomy = desk || window.innerWidth > 700;    // 태블릿처럼 화면이 넓은가
 
   return `
@@ -212,6 +238,7 @@ export function html() {
       <div class="att-sync" id="attSync">
         <span class="sy-dot" id="attSyncDot"></span>
         <span id="attSyncT">${esc(syncText())}</span>
+        ${verNote ? `<span class="sy-ver" id="attVer">· ${esc(verNote)}</span>` : ""}
         <span class="sy-hint">· 아래로 당겨 새로고침</span>
       </div>
     </div>
@@ -224,6 +251,20 @@ export function html() {
     </div>
 
     ${canEdit() && !query && filter !== "in" ? `
+    ${(() => {
+      const r = recentGuests();
+      if (!r.length) return "";
+      return `<div class="att-past">
+        <div class="att-past-h">최근 ${GUEST_RECENT_WEEKS}주에 왔던 아이
+          <small>누르면 오늘 출석으로 들어갑니다</small></div>
+        <div class="att-chips">
+          ${r.map((g) => `<button type="button" class="att-chip att-chip-g att-chip-past"
+              data-past="${g.id}">${esc(g.name)}
+              <i class="att-when-s">${esc(dateShort(state.guestLastOn[g.id] || g.first_on))}</i>
+            </button>`).join("")}
+        </div>
+      </div>`;
+    })()}
     <button type="button" class="att-add" id="attAddGuest">
       ＋ 처음 온 아이
       <small>친구 따라왔거나 교회를 둘러보러 온 아이</small>
@@ -373,6 +414,19 @@ export function mount(root, rerender) {
   root.querySelector("#attLog")?.addEventListener("click", () => openLog(rerender));
   root.querySelector("#attHelp2")?.addEventListener("click", () => openTour());
   root.querySelector("#attAddGuest")?.addEventListener("click", () => guestForm(null, rerender));
+  root.querySelectorAll("[data-past]").forEach((b) => b.addEventListener("click", async () => {
+    const g = state.attendGuests.find((x) => x.id === b.dataset.past);
+    if (!g || !canEdit()) return;
+    try {
+      b.classList.add("on");
+      await ensureEvent();
+      const row = await api.markGuest(ev.id, g.id, { present: true });
+      marks.set(g.id, row);
+      buzz(24); burstAt(b);
+      toast(`${g.name} — 오늘 출석으로 넣었습니다.`);
+      rerender();
+    } catch (e) { b.classList.remove("on"); toast(e.message, "err"); }
+  }));
   //  «공사중» 안내는 ✕ 로 접어 둘 수 있습니다. 다만 아직 공사 중이니,
   //  화면을 나갔다 다시 들어오면 또 한 번 보여 드립니다.
   root.querySelector("#attWipX")?.addEventListener("click", () => { wipHidden = true; rerender(); });
@@ -1163,6 +1217,7 @@ function showGuest(g, after) {
 // ── 모임 고르기 · 지난 기록 ─────────────────────────────────
 function pickEvent(rerender) {
   let kind = target.kind, date = target.held_on, title = target.title || "";
+  const verId = ev?.version_id || "";
   modal({
     title: "모임 고르기",
     slim: true,
@@ -1181,6 +1236,19 @@ function pickEvent(rerender) {
         <label>이름 <small style="color:var(--text-muted)">예: 여름수련회 2일차</small></label>
         <input id="pkTitle" value="${esc(title)}" placeholder="행사 이름">
       </div>
+      <details class="att-more">
+        <summary>셀편성 고르기 <small>보통은 그대로 두시면 됩니다</small></summary>
+        <div class="field">
+          <label>어느 편성으로 묶어 볼까요</label>
+          <select id="pkVer">
+            <option value="">그날 쓰던 편성 (자동)</option>
+            ${state.versions.map((v) => `<option value="${v.id}"${v.id === verId ? " selected" : ""}
+              >${esc(versionLabel(v) || "이름 없음")}</option>`).join("")}
+          </select>
+          <div class="hint">알파 행사처럼 <b>임시로 셀을 짜셨다면</b> 그 편성을 골라 두세요.
+            출석 기록 자체는 아이마다 붙어 있어서, 편성을 바꿔도 사라지지 않습니다.</div>
+        </div>
+      </details>
       <div style="font-size:12.5px;color:var(--text-muted);line-height:1.6">
         같은 날에 예배와 행사를 따로 기록할 수 있습니다.
         수련회는 날짜별로 «1일차 · 2일차» 처럼 하나씩 만들면 됩니다.
@@ -1194,11 +1262,20 @@ function pickEvent(rerender) {
         box.querySelectorAll("#pkKind button").forEach((x) => x.classList.toggle("on", x === b));
         box.querySelector("#pkTitleWrap").hidden = kind === "주일예배";
       });
-      box.querySelector("#pkGo").addEventListener("click", () => {
+      box.querySelector("#pkGo").addEventListener("click", async () => {
         date = box.querySelector("#pkDate").value || date;
         title = kind === "주일예배" ? "" : box.querySelector("#pkTitle").value.trim();
+        const pickedVer = box.querySelector("#pkVer").value || null;
         close();
         goto({ held_on: date, kind, title }, rerender);
+        //  편성을 손수 고르셨으면 그 모임에 적어 둡니다
+        if (pickedVer !== verId) {
+          try {
+            await ensureEvent();
+            ev = await api.saveEvent({ id: ev.id, version_id: pickedVer || versionOn(date) });
+            rerender();
+          } catch (e) { toast(e.message, "err"); }
+        }
       });
     },
   });

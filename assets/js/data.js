@@ -30,7 +30,11 @@ export const state = {
   attendQuotes: [],      // 당겨서 새로고침할 때 뜨는 문구 (관리자가 관리)
   attendGuests: [],      // «처음 온 아이» — 친구 따라왔거나 교회를 둘러보러 온 아이
   guestCounts: {},       // 손님 id → 지금까지 출석한 횟수
+  guestLastOn: {},       // 손님 id → 마지막으로 온 날 (yyyy-mm-dd)
 };
+
+/** «최근에 왔던 아이» 를 몇 주까지 보여 줄지 */
+export const GUEST_RECENT_WEEKS = 4;
 
 /** 몇 번 이상 나오면 «교적부에 등록할까요?» 하고 물어볼지 */
 export const ENROLL_AFTER = 4;
@@ -241,17 +245,23 @@ const supabaseAdapter = {
   /** «처음 온 아이» 와 그 아이들이 지금까지 몇 번 나왔는지
    *  (11_attendance_guests.sql 을 아직 실행하지 않았으면 조용히 비워 둡니다) */
   async loadGuests() {
-    state.attendGuests = []; state.guestCounts = {};
+    state.attendGuests = []; state.guestCounts = {}; state.guestLastOn = {};
     const { data, error } = await sb.from("attend_guests").select("*").order("first_on");
     if (error) return;
     state.attendGuests = data || [];
     if (!state.attendGuests.length) return;
-    const m = await sb.from("attend_marks").select("guest_id").eq("present", true)
+    const m = await sb.from("attend_marks").select("guest_id,event_id").eq("present", true)
       .not("guest_id", "is", null);
     if (m.error) return;
-    const c = {};
-    (m.data || []).forEach((r) => { c[r.guest_id] = (c[r.guest_id] || 0) + 1; });
-    state.guestCounts = c;
+    const day = {};
+    state.attendEvents.forEach((e) => { day[e.id] = e.held_on; });
+    const c = {}, last = {};
+    (m.data || []).forEach((r) => {
+      c[r.guest_id] = (c[r.guest_id] || 0) + 1;
+      const d = day[r.event_id];
+      if (d && (!last[r.guest_id] || d > last[r.guest_id])) last[r.guest_id] = d;
+    });
+    state.guestCounts = c; state.guestLastOn = last;
   },
 
   async saveGuest(row) {
@@ -289,9 +299,13 @@ const supabaseAdapter = {
     let { data, error } = await find();
     if (error) throw new Error(translate(error.message));
     if (!data) {
-      const ins = await sb.from("attend_events")
-        .insert({ held_on, kind, title: title || "" })
-        .select().single();
+      const body = { held_on, kind, title: title || "", version_id: versionOn(held_on) };
+      let ins = await sb.from("attend_events").insert(body).select().single();
+      //  11_attendance_guests.sql 을 아직 실행하지 않았으면 version_id 칸이 없습니다 — 빼고 한 번 더
+      if (ins.error && /version_id/.test(ins.error.message || "")) {
+        const { version_id, ...plain } = body;
+        ins = await sb.from("attend_events").insert(plain).select().single();
+      }
       if (ins.error) {
         ({ data } = await find());                 // 찰나에 다른 분이 먼저 만든 경우
         if (!data) throw new Error(translate(ins.error.message));
@@ -755,11 +769,17 @@ const demoAdapter = {
     demo.attend_guests ||= [];
     state.attendGuests = isLoggedIn()
       ? [...demo.attend_guests].sort((a, b) => String(a.first_on).localeCompare(String(b.first_on))) : [];
-    const c = {};
+    const day = {};
+    (demo.attend_events || []).forEach((e) => { day[e.id] = e.held_on; });
+    const c = {}, last = {};
     (demo.attend_marks || []).forEach((m) => {
-      if (m.guest_id && m.present) c[m.guest_id] = (c[m.guest_id] || 0) + 1;
+      if (!m.guest_id || !m.present) return;
+      c[m.guest_id] = (c[m.guest_id] || 0) + 1;
+      const d = day[m.event_id];
+      if (d && (!last[m.guest_id] || d > last[m.guest_id])) last[m.guest_id] = d;
     });
     state.guestCounts = isLoggedIn() ? c : {};
+    state.guestLastOn = isLoggedIn() ? last : {};
     this.persist();
   },
 
@@ -798,9 +818,16 @@ const demoAdapter = {
                         : { id: uid(), event_id: eventId, guest_id: guestId, student_id: null, present: true };
     const row = { ...base, ...patch, marked_at: new Date().toISOString() };
     if (i >= 0) demo.attend_marks[i] = row; else demo.attend_marks.push(row);
-    const c = {};
-    demo.attend_marks.forEach((m) => { if (m.guest_id && m.present) c[m.guest_id] = (c[m.guest_id] || 0) + 1; });
-    state.guestCounts = c;
+    const day = {};
+    (demo.attend_events || []).forEach((e) => { day[e.id] = e.held_on; });
+    const c = {}, last = {};
+    demo.attend_marks.forEach((x) => {
+      if (!x.guest_id || !x.present) return;
+      c[x.guest_id] = (c[x.guest_id] || 0) + 1;
+      const d = day[x.event_id];
+      if (d && (!last[x.guest_id] || d > last[x.guest_id])) last[x.guest_id] = d;
+    });
+    state.guestCounts = c; state.guestLastOn = last;
     this.persist();
     return { ...row };
   },
@@ -811,7 +838,7 @@ const demoAdapter = {
       (e) => e.held_on === held_on && e.kind === kind && (e.title || "") === (title || ""));
     if (!ev) {
       ev = { id: uid(), held_on, kind, title: title || "", note: null,
-             created_at: new Date().toISOString() };
+             version_id: versionOn(held_on), created_at: new Date().toISOString() };
       demo.attend_events.push(ev);
       this.persist();
     }
@@ -1323,6 +1350,18 @@ export const api = {
 
 // ── 파생 데이터 ──────────────────────────────────────────
 export const currentVersion = () => state.versions.find((v) => v.id === state.versionId) || null;
+/** 그 날짜에 쓰이고 있던 셀편성 — 그날까지 만들어진 것 중 가장 최근 것 */
+export function versionOn(held_on) {
+  if (!held_on || !state.versions.length) return state.versionId;
+  const end = `${held_on}T23:59:59`;
+  const v = [...state.versions]
+    .filter((x) => String(x.created_at) <= end)
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
+  //  그 날짜보다 먼저 만들어진 편성이 하나도 없으면(교적부를 나중에 시작한 경우)
+  //  가장 오래된 편성을 씁니다
+  return (v || [...state.versions].sort((a, b) =>
+    String(a.created_at).localeCompare(String(b.created_at)))[0])?.id || state.versionId;
+}
 export const versionCells = (vid = state.versionId) =>
   state.cells.filter((c) => c.version_id === vid).sort((a, b) => a.sort_order - b.sort_order);
 export const activeCells = (vid = state.versionId) =>
