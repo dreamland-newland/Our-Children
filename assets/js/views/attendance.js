@@ -5,7 +5,7 @@
 //   · 지난 기록도 폰에서 보고, «수정» 을 누르면 고칠 수 있습니다.
 // ============================================================
 import {
-  state, api, isLoggedIn, isAdmin, isActive, photoOf, gradeOf,
+  state, api, isLoggedIn, isAdmin, isActive, photoOf, gradeOf, ENROLL_AFTER,
   activeCells, cellMembers, cellRoleOf, roleRank, currentVersion,
   dateLabel, dateShort, eventName, sundayOf, ymd, parseYmd, ATTEND_KINDS,
 } from "../data.js";
@@ -83,8 +83,23 @@ function roster() {
   const rest = state.students.filter((s) => isActive(s) && !used.has(s.id))
     .sort((a, b) => byName(a.name, b.name));
   if (rest.length) groups.push({ id: "_none", name: "셀 미배정", leaders: [], kids: rest });
+
+  //  오늘 처음 온 아이 — 교적부에 없는, 친구 따라왔거나 둘러보러 온 아이들.
+  //  이 모임에 이름을 올려 둔 아이만 보입니다.
+  const guests = guestsHere();
+  if (guests.length)
+    groups.push({ id: "_guest", name: "오늘 처음 온 아이", leaders: [], guest: true, kids: guests });
   return groups;
 }
+
+/** 지금 보고 있는 모임에 이름이 올라 있는 손님들 (결석으로 바꿔도 목록엔 남습니다) */
+function guestsHere() {
+  if (!ev) return [];
+  return state.attendGuests
+    .filter((g) => marks.has(g.id))
+    .sort((a, b) => byName(a.name, b.name));
+}
+const isGuest = (id) => state.attendGuests.some((g) => g.id === id);
 
 const isIn = (id) => marks.get(id)?.present === true;
 const memoOf = (id) => marks.get(id)?.memo || "";
@@ -206,6 +221,12 @@ export function html() {
         : `<div class="empty" style="padding:38px 0">${query ? "찾는 이름이 없습니다." : "해당하는 아이가 없습니다."}</div>`}
     </div>
 
+    ${canEdit() && !query && filter !== "in" ? `
+    <button type="button" class="att-add" id="attAddGuest">
+      ＋ 처음 온 아이
+      <small>친구 따라왔거나 교회를 둘러보러 온 아이</small>
+    </button>` : ""}
+
     <div class="att-foot">
       <button type="button" class="att-help-btn" id="attHelp2">${ICO.help}사용법 보기</button>
     </div>
@@ -239,11 +260,14 @@ function groupHtml(g) {
         return lead.length ? `<span class="att-lead">${esc(lead.join(" · "))}</span>` : "";
       })()}
       <span class="att-cnt">${inn}/${g.kids.length}</span>
-      ${canEdit() && filter !== "out" ? `<button class="att-all" data-all="${g.id}" data-on="${inn < g.kids.length ? 1 : 0}"
-        >${inn < g.kids.length ? "모두 출석" : "모두 해제"}</button>` : ""}
+      ${canEdit() && filter !== "out" && !g.guest
+        ? `<button class="att-all" data-all="${g.id}" data-on="${inn < g.kids.length ? 1 : 0}"
+            >${inn < g.kids.length ? "모두 출석" : "모두 해제"}</button>` : ""}
     </div>`;
 
   if (filter === "out") return `<section class="att-cell">${head}${g.kids.map(visitRow).join("")}</section>`;
+  if (g.guest) return `<section class="att-cell att-cell-guest">${head}
+    <div class="att-chips">${g.kids.map(guestChip).join("")}</div></section>`;
   if (viewMode === "list") return `<section class="att-cell">${head}${g.kids.map(listRow).join("")}</section>`;
   if (viewMode === "photo")
     return `<section class="att-cell">${head}<div class="att-faces">${g.kids.map(faceCell).join("")}</div></section>`;
@@ -251,6 +275,15 @@ function groupHtml(g) {
 }
 
 const kidAttrs = (s) => `data-s="${s.id}" data-name="${esc(s.name)}"`;
+
+/** 손님 이름표 — 교적부 아이와 구별되게 점선 테두리 */
+function guestChip(g) {
+  const on = isIn(g.id);
+  const n = state.guestCounts[g.id] || 0;
+  return `<button class="att-chip att-chip-g${on ? " on" : ""}${memoOf(g.id) ? " memo" : ""}"
+    data-s="${g.id}" data-name="${esc(g.name)}" data-guest="1"
+    >${esc(g.name)}${n >= 2 ? `<i class="att-n">${n}</i>` : ""}</button>`;
+}
 
 function chip(s) {
   const on = isIn(s.id);
@@ -291,7 +324,7 @@ function visitRow(s) {
     <div class="att-memo" hidden>
       <textarea rows="2" placeholder="결석 사유 · 통화 내용을 적어 두세요" ${canEdit() ? "" : "disabled"}>${esc(m)}</textarea>
       <div class="att-memo-f">
-        ${marks.get(s.id)?.memo_by ? `<small>${esc(marks.get(s.id).memo_by)}</small>` : "<small></small>"}
+        <small></small>
         <button class="btn btn-sm" data-cancel="${s.id}">닫기</button>
         ${canEdit() ? `<button class="btn btn-primary btn-sm" data-save="${s.id}">저장</button>` : ""}
       </div>
@@ -332,6 +365,7 @@ export function mount(root, rerender) {
   root.querySelector("#attEdit")?.addEventListener("click", () => { unlocked = true; rerender(); });
   root.querySelector("#attLog")?.addEventListener("click", () => openLog(rerender));
   root.querySelector("#attHelp2")?.addEventListener("click", () => openTour());
+  root.querySelector("#attAddGuest")?.addEventListener("click", () => guestForm(null, rerender));
   //  «공사중» 안내는 ✕ 로 접어 둘 수 있습니다. 다만 아직 공사 중이니,
   //  화면을 나갔다 다시 들어오면 또 한 번 보여 드립니다.
   root.querySelector("#attWipX")?.addEventListener("click", () => { wipHidden = true; rerender(); });
@@ -445,8 +479,10 @@ function wireTaps(body, rerender) {
       held = true;
       el.classList.remove("press");
       buzz(12);
-      const s = state.students.find((x) => x.id === el.dataset.s);
-      showStudent(s, rerender);
+      const id = el.dataset.s;
+      const g = state.attendGuests.find((x) => x.id === id);
+      if (g) showGuest(g, rerender);
+      else showStudent(state.students.find((x) => x.id === id), rerender);
     }, 480);
   });
 
@@ -495,7 +531,9 @@ async function toggle(el, id, rerender) {
   } else buzz(10);
   try {
     await ensureEvent();
-    const row = await api.mark(ev.id, id, { present: next, ...(next ? {} : {}) });
+    const row = isGuest(id)
+      ? await api.markGuest(ev.id, id, { present: next })
+      : await api.mark(ev.id, id, { present: next });
     marks.set(id, { ...marks.get(id), ...row });
     rerender();
   } catch (e) {
@@ -528,11 +566,12 @@ function wireMemo(body, rerender) {
     const memo = box.querySelector("textarea").value.trim();
     try {
       await ensureEvent();
-      const row = await api.mark(ev.id, id, {
+      const patch = {
         present: isIn(id), memo: memo || null,
-        memo_by: memo ? (state.profile?.name || null) : null,
         memo_at: memo ? new Date().toISOString() : null,
-      });
+      };
+      const row = isGuest(id) ? await api.markGuest(ev.id, id, patch)
+                              : await api.mark(ev.id, id, patch);
       marks.set(id, { ...marks.get(id), ...row });
       toast(memo ? "심방 기록을 저장했습니다." : "심방 기록을 지웠습니다.");
       rerender();
@@ -660,71 +699,163 @@ function markTourSeen() {
   try { localStorage.setItem(TOUR_KEY, "1"); } catch { /* 저장 못 해도 그만 */ }
 }
 
-/** 화면마다 달라지는 «새로고침» 설명 */
-const refreshStep = () => (isDesktop()
-  ? { art: `<div class="tt-bar"><span class="tt-ico">${ICO.redo}</span></div>`,
-      title: "↻ 를 누르면 새로고침",
-      body: "다른 선생님이 방금 누른 내용까지 받아 옵니다.<br>누르지 않아도 1분마다 저절로 맞춰집니다." }
-  : { art: `<div class="tt-ring"><svg viewBox="0 0 52 52"><circle class="rg-bg" cx="26" cy="26" r="21"/>
-             <circle class="tt-arc" cx="26" cy="26" r="21"/></svg><i>🍀</i></div>`,
-      title: "아래로 당기면 새로고침",
-      body: "클로버가 다 자라면 손을 놓으세요.<br>다른 선생님이 누른 내용까지 바로 맞춰집니다." });
+/** 안내 창 안에서만 쓰는 «연습용» 손가락 인식기 — 실제 출석에는 아무 영향이 없습니다 */
+function practiceTaps(box, { onDouble, onHold } = {}) {
+  let hold = null, held = false, target = null, downXY = null;
+  let lastId = null, lastAt = 0;
+
+  box.addEventListener("pointerdown", (e) => {
+    const el = e.target.closest("[data-p]"); if (!el) return;
+    target = el; held = false; downXY = { x: e.clientX, y: e.clientY };
+    el.classList.add("press");
+    if (onHold) hold = setTimeout(() => {
+      held = true; el.classList.remove("press"); buzz(12); onHold(el);
+    }, 480);
+  });
+  const cancel = () => { clearTimeout(hold); hold = null; target?.classList.remove("press"); };
+  box.addEventListener("pointermove", (e) => {
+    if (!downXY || !target) return;
+    if (Math.abs(e.clientX - downXY.x) > 10 || Math.abs(e.clientY - downXY.y) > 10) {
+      cancel(); target = null; downXY = null;
+    }
+  });
+  box.addEventListener("pointercancel", () => { cancel(); target = null; });
+  box.addEventListener("pointerup", () => {
+    const el = target; cancel(); target = null; downXY = null;
+    if (!el || held || !onDouble) return;
+    const id = el.dataset.p, now = Date.now();
+    const second = lastId === id && now - lastAt < 400;
+    lastId = id; lastAt = second ? 0 : now;
+    if (!second) {
+      el.classList.add("tap1");
+      setTimeout(() => el.classList.remove("tap1"), 420);
+      return;
+    }
+    onDouble(el);
+  });
+  box.addEventListener("dblclick", (e) => { if (e.target.closest("[data-p]")) e.preventDefault(); });
+}
+
+const pchip = (n, i) => `<span class="tt-chip" data-p="${i}">${n}</span>`;
 
 const TOUR = () => [
-  { art: `<div class="tt-chips">
-            <span class="tt-chip">서연</span>
-            <span class="tt-chip tt-tap">하준</span>
-            <span class="tt-chip">예린</span>
-          </div>
-          <span class="tt-finger" aria-hidden="true">👆</span>`,
-    title: isDesktop() ? "이름을 두 번 클릭" : "이름을 두 번 톡톡",
+  // ── ① 두 번 톡톡 ─────────────────────────────────────
+  { title: isDesktop() ? "이름을 두 번 클릭해 보세요" : "이름을 두 번 톡톡 쳐 보세요",
     body: "그 아이가 <b>출석</b>으로 바뀝니다."
-          + (isDesktop() ? "" : " 손끝이 살짝 울리고 꽃이 터져요.")
-          + "<br>잘못 눌렀으면 <b>다시 두 번</b> 누르면 됩니다.",
-    note: "한 번만 누르면 아무 일도 일어나지 않습니다 — 실수로 눌리는 걸 막으려고요." },
+          + (isDesktop() ? "" : " 손끝이 살짝 울리고 꽃이 터져요."),
+    task: "아래 이름 중 아무거나 두 번",
+    hint: '[data-p="1"]',
+    note: "한 번만 누르면 아무 일도 일어나지 않습니다 — 실수로 눌리는 걸 막으려고요.",
+    art: `<div class="tt-play">
+            <div class="tt-chips">${["서연", "하준", "예린"].map(pchip).join("")}</div>
+          </div>`,
+    wire(box, done) {
+      practiceTaps(box, { onDouble: (el) => {
+        const on = el.classList.toggle("on");
+        if (on) { buzz(28); burstAt(el); el.classList.add("pop");
+                  setTimeout(() => el.classList.remove("pop"), 460); done(); }
+        else buzz(10);
+      } });
+    } },
 
-  { art: `<div class="tt-chips">
-            <span class="tt-chip tt-hold">하준<span class="tt-ripple"></span></span>
-          </div>
-          <span class="tt-finger hold" aria-hidden="true">👆</span>`,
-    title: isDesktop() ? "이름을 꾹 누르고 있으면" : "이름을 꾹 누르면",
-    body: "그 아이 <b>신상</b>이 열립니다. 얼굴·학년·연락처를 바로 볼 수 있어요.",
-    note: "출석 표시는 바뀌지 않습니다. 보기만 하는 겁니다." },
-
-  { art: `<div class="tt-cell">
-            <div class="tt-ch"><b>3셀</b><span>0/5</span><em>모두 출석</em></div>
-            <div class="tt-chips sm">
-              <span class="tt-chip on">서연</span><span class="tt-chip on">하준</span>
-              <span class="tt-chip on">예린</span><span class="tt-chip on">도윤</span>
+  // ── ② 꾹 누르기 ──────────────────────────────────────
+  { title: "이번엔 꾹 눌러 보세요",
+    body: "이름을 <b>1초쯤 누르고 있으면</b> 그 아이 신상이 열립니다. 얼굴·학년·연락처를 바로 볼 수 있어요.",
+    task: "«하준» 을 꾹",
+    hint: '[data-p="h"]',
+    note: "출석 표시는 바뀌지 않습니다. 보기만 하는 겁니다.",
+    art: `<div class="tt-play">
+            <div class="tt-chips"><span class="tt-chip" data-p="h">하준</span></div>
+            <div class="tt-peek" hidden>
+              <span class="tt-face">하</span>
+              <div><b>김하준</b><small>중2 · ○○중 · 3셀</small></div>
             </div>
           </div>`,
-    title: "셀은 통째로 한 번에",
-    body: "셀 이름 오른쪽 <b>«모두 출석»</b> 을 누르면 그 셀이 전부 출석이 됩니다.<br>" +
-          "안 온 아이만 두 번 눌러서 풀면 훨씬 빨라요." },
+    wire(box, done) {
+      practiceTaps(box, { onHold: () => {
+        const peek = box.querySelector(".tt-peek");
+        if (peek.hidden) { peek.hidden = false; done(); }
+      } });
+    } },
 
-  { art: `<div class="tt-seg"><span>전체</span><span class="on">결석</span></div>
-          <div class="tt-row"><i></i>박지훈<em>심방</em></div>
-          <div class="tt-memo">어머니 통화 — 가족 여행. 다음 주 온다고 하심</div>`,
-    title: "결석만 모아 보고, 심방 남기기",
+  // ── ③ 셀 통째로 ──────────────────────────────────────
+  { title: "셀은 통째로 한 번에",
+    body: "셀 이름 오른쪽 <b>«모두 출석»</b> 을 누르면 그 셀이 전부 출석이 됩니다.<br>" +
+          "안 온 아이만 두 번 눌러서 풀면 훨씬 빨라요.",
+    task: "«모두 출석» 을 눌러 보세요",
+    hint: "[data-pall]",
+    art: `<div class="tt-play">
+            <div class="tt-ch"><b>3셀</b><span class="tt-cnt">0/4</span>
+              <button type="button" class="tt-all" data-pall>모두 출석</button></div>
+            <div class="tt-chips sm">${["서연", "하준", "예린", "도윤"].map(pchip).join("")}</div>
+          </div>`,
+    wire(box, done) {
+      box.querySelector("[data-pall]").addEventListener("click", (e) => {
+        const chips = [...box.querySelectorAll(".tt-chip")];
+        const on = !chips[0].classList.contains("on");
+        chips.forEach((c, i) => setTimeout(() => {
+          c.classList.toggle("on", on);
+          if (on) { c.classList.add("pop"); setTimeout(() => c.classList.remove("pop"), 460); }
+        }, i * 70));
+        box.querySelector(".tt-cnt").textContent = (on ? chips.length : 0) + "/" + chips.length;
+        e.currentTarget.textContent = on ? "모두 해제" : "모두 출석";
+        if (on) { buzz(24); burstAt(e.currentTarget); done(); }
+      });
+    } },
+
+  // ── ④ 결석자 심방 ────────────────────────────────────
+  { title: "안 온 아이는 «심방» 에 적어 두기",
     body: "위에서 <b>«결석»</b> 을 누르면 안 온 아이만 모입니다.<br>" +
           "이름 옆 <b>«심방»</b> 을 누르면 결석 사유를 적어 둘 수 있어요.",
-    note: "적어 둔 아이는 이름표에 주황색 점이 붙습니다." },
+    task: "«심방» 을 눌러 칸을 열어 보세요",
+    hint: "[data-pmemo]",
+    note: "적어 둔 아이는 이름표에 주황색 점이 붙습니다.",
+    art: `<div class="tt-play">
+            <div class="tt-seg"><span>전체</span><span class="on">결석</span></div>
+            <div class="tt-row"><i></i>박지훈
+              <button type="button" class="tt-memo-b" data-pmemo>심방</button></div>
+            <div class="tt-memo" hidden>
+              <textarea rows="2" placeholder="결석 사유 · 통화 내용을 적어 두세요"></textarea>
+            </div>
+          </div>`,
+    wire(box, done) {
+      box.querySelector("[data-pmemo]").addEventListener("click", (e) => {
+        const m = box.querySelector(".tt-memo");
+        m.hidden = !m.hidden;
+        e.currentTarget.textContent = m.hidden ? "심방" : "심방 ✎";
+        if (!m.hidden) { m.querySelector("textarea").focus(); done(); }
+      });
+    } },
 
-  { ...refreshStep(),
-    note: "출석당번이 두 분이어도 서로 누른 게 섞이지 않습니다. 각자 누른 아이만 저장돼요." },
+  // ── ⑤ 새로고침 (보여 드리기만) ───────────────────────
+  isDesktop()
+    ? { title: "↻ 를 누르면 새로고침",
+        body: "다른 선생님이 방금 누른 내용까지 받아 옵니다.<br>누르지 않아도 1분마다 저절로 맞춰집니다.",
+        note: "출석당번이 두 분이어도 서로 누른 게 섞이지 않습니다. 각자 누른 아이만 저장돼요.",
+        art: `<div class="tt-play mid"><span class="tt-ico">${ICO.redo}</span></div>` }
+    : { title: "아래로 당기면 새로고침",
+        body: "클로버가 다 자라면 손을 놓으세요.<br>다른 선생님이 누른 내용까지 바로 맞춰집니다.",
+        note: "출석당번이 두 분이어도 서로 누른 게 섞이지 않습니다. 각자 누른 아이만 저장돼요.",
+        art: `<div class="tt-play mid"><div class="tt-ring">
+                <svg viewBox="0 0 52 52"><circle class="rg-bg" cx="26" cy="26" r="21"/>
+                <circle class="tt-arc" cx="26" cy="26" r="21"/></svg><i>🍀</i></div></div>` },
 
-  { art: `<div class="tt-date"><span>‹</span><b>9/20 (9월 3주차)</b><span>›</span></div>
-          <div class="tt-bar"><span class="tt-ico">${ICO.log}</span></div>`,
-    title: "지난 기록 · 수련회도",
+  // ── ⑥ 지난 기록 · 손님 ───────────────────────────────
+  { title: "지난 기록 · 수련회 · 처음 온 아이",
     body: "<b>‹ ›</b> 로 주를 옮기고, 날짜를 누르면 <b>수련회·행사</b> 도 만들 수 있습니다.<br>" +
-          "시계 단추를 누르면 지금까지 기록이 전부 나옵니다.",
-    note: "지난 기록은 잠겨서 열립니다 — «수정» 을 눌러야 고쳐져요." },
+          "맨 아래 <b>«＋ 처음 온 아이»</b> 로 친구 따라온 아이도 적어 둘 수 있어요.",
+    note: "지난 기록은 잠겨서 열립니다 — «수정» 을 눌러야 고쳐져요.",
+    art: `<div class="tt-play mid">
+            <div class="tt-date"><span>‹</span><b>9/20 (9월 3주차)</b><span>›</span></div>
+            <span class="tt-ico">${ICO.log}</span>
+          </div>` },
 ];
 
 export function openTour() {
   if (document.querySelector(".tt")) return () => {};   // 이미 열려 있으면 또 열지 않습니다
   const steps = TOUR();
   let i = 0;
+  const cleared = new Set();
   markTourSeen();
   document.getElementById("attHelp2")?.classList.remove("hint");
 
@@ -733,6 +864,8 @@ export function openTour() {
 
   const draw = () => {
     const st = steps[i];
+    const needs = !!st.wire;
+    const okAlready = cleared.has(i);
     box.innerHTML = `
       <div class="tt-art">
         ${st.art}
@@ -742,16 +875,38 @@ export function openTour() {
       <div class="tt-txt">
         <h4>${st.title}</h4>
         <p>${st.body}</p>
+        ${needs ? `<div class="tt-task${okAlready ? " ok" : ""}" id="ttTask">
+            <span class="tt-tick">${okAlready ? "✓" : "👆"}</span>
+            <span>${okAlready ? "잘하셨어요!" : st.task}</span>
+          </div>` : ""}
         ${st.note ? `<small>${st.note}</small>` : ""}
       </div>
       <div class="tt-nav">
         <span class="tt-dots">${steps.map((_, n) =>
-          `<i class="${n === i ? "on" : ""}" data-go="${n}"></i>`).join("")}</span>
+          `<i class="${n === i ? "on" : ""}${cleared.has(n) ? " done" : ""}" data-go="${n}"></i>`).join("")}</span>
         ${i === steps.length - 1 ? "" : `<button type="button" class="tt-skip" data-x>그만 볼래요</button>`}
         ${i > 0 ? `<button type="button" class="btn btn-sm" data-prev>이전</button>` : ""}
         <button type="button" class="btn btn-primary btn-sm" data-next>
           ${i === steps.length - 1 ? "다 알았어요" : "다음"}</button>
       </div>`;
+
+    const art = box.querySelector(".tt-art");
+    //  «여기를 누르세요» — 눌러야 할 것을 동그랗게 반짝이게 합니다
+    const point = st.hint && !okAlready ? art.querySelector(st.hint) : null;
+    point?.classList.add("tt-point");
+    st.wire?.(art, () => {
+      point?.classList.remove("tt-point");
+      if (cleared.has(i)) return;
+      cleared.add(i);
+      const t = box.querySelector("#ttTask");
+      if (t) {
+        t.classList.add("ok");
+        t.querySelector(".tt-tick").textContent = "✓";
+        t.lastElementChild.textContent = "잘하셨어요!";
+      }
+      box.querySelectorAll("[data-go]")[i]?.classList.add("done");
+    });
+
     box.querySelector("[data-next]").addEventListener("click", () => {
       if (i === steps.length - 1) close(); else { i += 1; draw(); }
     });
@@ -769,6 +924,124 @@ export function openTour() {
   });
   draw();
   return close;
+}
+
+// ════════════════════════════════════════════════════════════
+//  처음 온 아이
+//   교적부에는 넣지 않습니다. 출석부에만 적어 두고,
+//   ENROLL_AFTER 주 넘게 나오면 개요 화면에서 등록을 권합니다.
+// ════════════════════════════════════════════════════════════
+export function guestForm(g, after) {
+  const isNew = !g?.id;
+  const v = { name: "", gender: "", grade: "", school: "", phone: "",
+              guardian: "", invited_by: "", note: "", ...(g || {}) };
+  const form = document.createElement("form");
+  form.id = "guestForm";
+  form.innerHTML = `
+    <div class="field">
+      <label>이름 <b style="color:var(--critical)">*</b></label>
+      <input name="name" required value="${esc(v.name)}" placeholder="아이 이름" autocomplete="off">
+    </div>
+    <div class="grid grid-2" style="gap:10px">
+      <div class="field"><label>성별</label>
+        <select name="gender">
+          <option value=""${!v.gender ? " selected" : ""}>모름</option>
+          <option value="남"${v.gender === "남" ? " selected" : ""}>남</option>
+          <option value="여"${v.gender === "여" ? " selected" : ""}>여</option>
+        </select></div>
+      <div class="field"><label>학년</label>
+        <input name="grade" value="${esc(v.grade || "")}" placeholder="중1 · 고2 …" autocomplete="off"></div>
+    </div>
+    <div class="field"><label>누구 친구로 왔나요</label>
+      <input name="invited_by" value="${esc(v.invited_by || "")}" placeholder="예: 김서연 친구" autocomplete="off"></div>
+    <details class="att-more"${v.school || v.phone || v.guardian || v.note ? " open" : ""}>
+      <summary>더 적어 두기 <small>학교 · 연락처 · 메모</small></summary>
+      <div class="field"><label>학교</label>
+        <input name="school" value="${esc(v.school || "")}" autocomplete="off"></div>
+      <div class="grid grid-2" style="gap:10px">
+        <div class="field"><label>본인 연락처</label>
+          <input name="phone" type="tel" value="${esc(v.phone || "")}" autocomplete="off"></div>
+        <div class="field"><label>보호자 연락처</label>
+          <input name="guardian" type="tel" value="${esc(v.guardian || "")}" autocomplete="off"></div>
+      </div>
+      <div class="field"><label>메모</label>
+        <textarea name="note" rows="2" placeholder="기억해 둘 것">${esc(v.note || "")}</textarea></div>
+    </details>
+    <div class="form-note" style="margin-bottom:0">
+      교적부에는 넣지 않습니다. 출석부에만 적어 둬요.
+      <b>${ENROLL_AFTER}주 넘게 나오면</b> 개요 화면에서 «교적부에 등록할까요?» 하고 물어봅니다.
+    </div>`;
+
+  modal({
+    title: isNew ? "처음 온 아이" : "처음 온 아이 고치기",
+    slim: true, body: form,
+    footer: `${isNew ? "" : `<button class="btn btn-danger btn-sm" id="gDel">삭제</button>`}
+             <button class="btn" data-close>취소</button>
+             <button class="btn btn-primary" form="guestForm" type="submit">저장</button>`,
+    onMount(box, close) {
+      box.querySelector("#gDel")?.addEventListener("click", async () => {
+        if (!(await confirmDialog(`«${g.name}» 을(를) 출석부에서 지울까요?\n` +
+                                  `지금까지의 출석 기록도 함께 사라집니다.`))) return;
+        try {
+          await api.deleteGuest(g.id);
+          marks.delete(g.id);
+          close(); toast("지웠습니다."); after?.();
+        } catch (e) { toast(e.message, "err"); }
+      });
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(form);
+        const row = { ...(g?.id ? { id: g.id } : {}) };
+        ["name", "gender", "grade", "school", "phone", "guardian", "invited_by", "note"]
+          .forEach((k) => { row[k] = String(f.get(k) || "").trim() || null; });
+        if (!row.name) { toast("이름을 적어 주세요.", "err"); return; }
+        try {
+          await ensureEvent();
+          const saved = await api.saveGuest(row);
+          if (isNew) {
+            //  적자마자 «왔음» 으로 둡니다 — 오늘 온 아이라서 적는 것이니까요
+            const m = await api.markGuest(ev.id, saved.id, { present: true });
+            marks.set(saved.id, m);
+            buzz(24);
+          }
+          close();
+          toast(isNew ? `${saved.name} — 오늘 출석으로 넣었습니다.` : "고쳤습니다.");
+          after?.();
+        } catch (err) { toast(err.message, "err"); }
+      });
+    },
+  });
+}
+
+/** 손님 이름을 꾹 누르면 — 적어 둔 것을 보여 주고, 바로 고칠 수 있게 */
+function showGuest(g, after) {
+  const n = state.guestCounts[g.id] || 0;
+  const rows = [
+    ["학년", g.grade], ["성별", g.gender], ["학교", g.school],
+    ["누구 친구", g.invited_by],
+    ["본인 연락처", g.phone], ["보호자", g.guardian],
+    ["처음 온 날", g.first_on], ["지금까지", n ? `${n}번 나옴` : null],
+    ["메모", g.note],
+  ].filter(([, v]) => v);
+
+  modal({
+    title: g.name, slim: true,
+    body: `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        <span class="badge orange">처음 온 아이</span>
+        ${n >= ENROLL_AFTER ? `<span class="badge blue">${n}주째 — 교적부 등록 권함</span>` : ""}
+      </div>
+      <div class="dtl-list">
+        ${rows.map(([k, v]) => `<div class="dtl-row"><span class="k">${esc(k)}</span>
+          <span class="v">${esc(String(v))}</span></div>`).join("")
+          || `<div class="empty" style="padding:16px 0">적어 둔 것이 없습니다.</div>`}
+      </div>`,
+    footer: `<button class="btn" data-close>닫기</button>
+             <button class="btn btn-primary" id="gEdit">고치기</button>`,
+    onMount(box, close) {
+      box.querySelector("#gEdit").addEventListener("click", () => { close(); guestForm(g, after); });
+    },
+  });
 }
 
 // ── 모임 고르기 · 지난 기록 ─────────────────────────────────
@@ -826,7 +1099,6 @@ function openLog(rerender) {
           <button class="att-log-r" data-e="${e.id}">
             <b>${esc(dateLabel(e.held_on))}</b>
             <span>${esc(eventName(e))}</span>
-            <small>${esc(e.updated_by_name || e.created_by_name || "")}</small>
           </button>`).join("")}
       </div>
       <div style="font-size:12.5px;color:var(--text-muted);margin-top:10px">

@@ -28,7 +28,15 @@ export const state = {
   attendReady: false,    // 출석부 표가 서버에 만들어져 있는가
   attendEvents: [],      // 모임 목록 (최근 것부터) — 주일예배·수련회·행사
   attendQuotes: [],      // 당겨서 새로고침할 때 뜨는 문구 (관리자가 관리)
+  attendGuests: [],      // «처음 온 아이» — 친구 따라왔거나 교회를 둘러보러 온 아이
+  guestCounts: {},       // 손님 id → 지금까지 출석한 횟수
 };
+
+/** 몇 번 이상 나오면 «교적부에 등록할까요?» 하고 물어볼지 */
+export const ENROLL_AFTER = 4;
+/** 아직 교적부에 넣지 않았고, 물어볼 때가 된 아이들 */
+export const guestsToEnroll = () => state.attendGuests.filter(
+  (g) => !g.enrolled_student_id && !g.dismissed && (state.guestCounts[g.id] || 0) >= ENROLL_AFTER);
 
 // ════════════════════════════════════════════════════════════
 //  출석부 — 날짜 이름표
@@ -227,6 +235,51 @@ const supabaseAdapter = {
     state.attendEvents = data || [];
     const q = await sb.from("attend_quotes").select("*").order("sort_order");
     if (!q.error) state.attendQuotes = q.data || [];
+    await this.loadGuests();
+  },
+
+  /** «처음 온 아이» 와 그 아이들이 지금까지 몇 번 나왔는지
+   *  (11_attendance_guests.sql 을 아직 실행하지 않았으면 조용히 비워 둡니다) */
+  async loadGuests() {
+    state.attendGuests = []; state.guestCounts = {};
+    const { data, error } = await sb.from("attend_guests").select("*").order("first_on");
+    if (error) return;
+    state.attendGuests = data || [];
+    if (!state.attendGuests.length) return;
+    const m = await sb.from("attend_marks").select("guest_id").eq("present", true)
+      .not("guest_id", "is", null);
+    if (m.error) return;
+    const c = {};
+    (m.data || []).forEach((r) => { c[r.guest_id] = (c[r.guest_id] || 0) + 1; });
+    state.guestCounts = c;
+  },
+
+  async saveGuest(row) {
+    const { data, error } = await sb.from("attend_guests").upsert(row).select().single();
+    if (error) throw new Error(translate(error.message));
+    upsertLocalGuest(data);
+    return data;
+  },
+  async deleteGuest(id) {
+    const { error } = await sb.from("attend_guests").delete().eq("id", id);
+    if (error) throw new Error(translate(error.message));
+    state.attendGuests = state.attendGuests.filter((g) => g.id !== id);
+    delete state.guestCounts[id];
+  },
+  /** 손님의 출석 표시 — 부분 인덱스라서 upsert 대신 찾아서 고칩니다 */
+  async markGuest(eventId, guestId, patch) {
+    const found = await sb.from("attend_marks").select("id")
+      .eq("event_id", eventId).eq("guest_id", guestId).maybeSingle();
+    if (found.error) throw new Error(translate(found.error.message));
+    //  «누가 눌렀는지» 는 남기지 않습니다 — 누가 했는지가 중요한 기록이 아니라서요
+    const body = { ...patch, marked_at: new Date().toISOString() };
+    const r = found.data
+      ? await sb.from("attend_marks").update(body).eq("id", found.data.id).select().single()
+      : await sb.from("attend_marks")
+          .insert({ event_id: eventId, guest_id: guestId, student_id: null, ...body })
+          .select().single();
+    if (r.error) throw new Error(translate(r.error.message));
+    return r.data;
   },
 
   /** 그 날짜·종류의 모임을 찾고, 없으면 만듭니다 (동시에 둘이 눌러도 하나만 생깁니다) */
@@ -237,7 +290,7 @@ const supabaseAdapter = {
     if (error) throw new Error(translate(error.message));
     if (!data) {
       const ins = await sb.from("attend_events")
-        .insert({ held_on, kind, title: title || "", created_by_name: state.profile?.name || null })
+        .insert({ held_on, kind, title: title || "" })
         .select().single();
       if (ins.error) {
         ({ data } = await find());                 // 찰나에 다른 분이 먼저 만든 경우
@@ -250,7 +303,7 @@ const supabaseAdapter = {
 
   async saveEvent(row) {
     const { data, error } = await sb.from("attend_events")
-      .update({ ...row, updated_by_name: state.profile?.name || null }).eq("id", row.id)
+      .update(row).eq("id", row.id)
       .select().single();
     if (error) throw new Error(translate(error.message));
     upsertLocalEvent(data);
@@ -270,7 +323,6 @@ const supabaseAdapter = {
   /** 한 아이의 «왔다/안 왔다» 또는 심방 기록을 저장합니다 */
   async mark(eventId, studentId, patch) {
     const row = { event_id: eventId, student_id: studentId, ...patch,
-                  marked_by_name: state.profile?.name || null,
                   marked_at: new Date().toISOString() };
     const { data, error } = await sb.from("attend_marks")
       .upsert(row, { onConflict: "event_id,student_id" }).select().single();
@@ -282,8 +334,7 @@ const supabaseAdapter = {
     if (!studentIds.length) return [];
     const now = new Date().toISOString();
     const rows = studentIds.map((student_id) => ({
-      event_id: eventId, student_id, present,
-      marked_by_name: state.profile?.name || null, marked_at: now }));
+      event_id: eventId, student_id, present, marked_at: now }));
     const { data, error } = await sb.from("attend_marks")
       .upsert(rows, { onConflict: "event_id,student_id" }).select();
     if (error) throw new Error(translate(error.message));
@@ -597,6 +648,10 @@ function translate(msg = "") {
     return "이 기능은 아직 켜지지 않았습니다. 관리자가 Supabase SQL Editor 에서 " +
            "supabase/09_password_reset.sql 을 한 번 실행해 주세요.";
   // 10_attendance.sql 을 아직 실행하지 않은 경우
+  if (m.includes("attend_guests") && (m.includes("does not exist") || m.includes("could not find")
+      || m.includes("schema cache")))
+    return "«처음 온 아이» 기능이 아직 켜지지 않았습니다. 관리자가 Supabase SQL Editor 에서 " +
+           "supabase/11_attendance_guests.sql 을 한 번 실행해 주세요.";
   if (m.includes("attend_") && (m.includes("does not exist") || m.includes("could not find")
       || m.includes("schema cache")))
     return "출석부가 아직 켜지지 않았습니다. 관리자가 Supabase SQL Editor 에서 " +
@@ -687,7 +742,57 @@ const demoAdapter = {
       ? [...demo.attend_events].sort((a, b) => String(b.held_on).localeCompare(String(a.held_on))) : [];
     state.attendQuotes = isLoggedIn()
       ? [...demo.attend_quotes].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)) : [];
+    demo.attend_guests ||= [];
+    state.attendGuests = isLoggedIn()
+      ? [...demo.attend_guests].sort((a, b) => String(a.first_on).localeCompare(String(b.first_on))) : [];
+    const c = {};
+    (demo.attend_marks || []).forEach((m) => {
+      if (m.guest_id && m.present) c[m.guest_id] = (c[m.guest_id] || 0) + 1;
+    });
+    state.guestCounts = isLoggedIn() ? c : {};
     this.persist();
+  },
+
+  async saveGuest(row) {
+    if (!state.profile) throw new Error("로그인이 필요합니다.");
+    demo.attend_guests ||= [];
+    const out = { ...row };
+    if (out.id) {
+      const i = demo.attend_guests.findIndex((g) => g.id === out.id);
+      if (i >= 0) demo.attend_guests[i] = { ...demo.attend_guests[i], ...out };
+      out.id && Object.assign(out, demo.attend_guests.find((g) => g.id === out.id));
+    } else {
+      out.id = uid();
+      out.first_on ||= ymd();
+      out.dismissed = false;
+      out.created_at = new Date().toISOString();
+      demo.attend_guests.push(out);
+    }
+    this.persist();
+    upsertLocalGuest(out);
+    return out;
+  },
+  async deleteGuest(id) {
+    if (!state.profile) throw new Error("로그인이 필요합니다.");
+    demo.attend_guests = (demo.attend_guests || []).filter((g) => g.id !== id);
+    demo.attend_marks = (demo.attend_marks || []).filter((m) => m.guest_id !== id);
+    state.attendGuests = state.attendGuests.filter((g) => g.id !== id);
+    delete state.guestCounts[id];
+    this.persist();
+  },
+  async markGuest(eventId, guestId, patch) {
+    if (!state.profile) throw new Error("로그인이 필요합니다.");
+    demo.attend_marks ||= [];
+    const i = demo.attend_marks.findIndex((m) => m.event_id === eventId && m.guest_id === guestId);
+    const base = i >= 0 ? demo.attend_marks[i]
+                        : { id: uid(), event_id: eventId, guest_id: guestId, student_id: null, present: true };
+    const row = { ...base, ...patch, marked_at: new Date().toISOString() };
+    if (i >= 0) demo.attend_marks[i] = row; else demo.attend_marks.push(row);
+    const c = {};
+    demo.attend_marks.forEach((m) => { if (m.guest_id && m.present) c[m.guest_id] = (c[m.guest_id] || 0) + 1; });
+    state.guestCounts = c;
+    this.persist();
+    return { ...row };
   },
 
   async openEvent({ held_on, kind = "주일예배", title = "" }) {
@@ -696,7 +801,7 @@ const demoAdapter = {
       (e) => e.held_on === held_on && e.kind === kind && (e.title || "") === (title || ""));
     if (!ev) {
       ev = { id: uid(), held_on, kind, title: title || "", note: null,
-             created_at: new Date().toISOString(), created_by_name: state.profile.name || null };
+             created_at: new Date().toISOString() };
       demo.attend_events.push(ev);
       this.persist();
     }
@@ -707,8 +812,7 @@ const demoAdapter = {
     if (!state.profile) throw new Error("로그인이 필요합니다.");
     const i = demo.attend_events.findIndex((e) => e.id === row.id);
     if (i < 0) throw new Error("모임을 찾을 수 없습니다.");
-    demo.attend_events[i] = { ...demo.attend_events[i], ...row,
-                              updated_by_name: state.profile.name || null };
+    demo.attend_events[i] = { ...demo.attend_events[i], ...row };
     this.persist();
     upsertLocalEvent(demo.attend_events[i]);
     return demo.attend_events[i];
@@ -729,8 +833,7 @@ const demoAdapter = {
     const i = demo.attend_marks.findIndex((m) => m.event_id === eventId && m.student_id === studentId);
     const base = i >= 0 ? demo.attend_marks[i]
                         : { id: uid(), event_id: eventId, student_id: studentId, present: true };
-    const row = { ...base, ...patch, marked_by_name: state.profile.name || null,
-                  marked_at: new Date().toISOString() };
+    const row = { ...base, ...patch, marked_at: new Date().toISOString() };
     if (i >= 0) demo.attend_marks[i] = row; else demo.attend_marks.push(row);
     this.persist();
     return { ...row };
@@ -1107,6 +1210,16 @@ function upsertLocalEvent(ev) {
   }
 }
 
+/** 손님 목록에 새 아이를 끼워 넣거나 갱신합니다 */
+function upsertLocalGuest(g) {
+  const i = state.attendGuests.findIndex((x) => x.id === g.id);
+  if (i >= 0) state.attendGuests[i] = g;
+  else {
+    state.attendGuests.push(g);
+    state.attendGuests.sort((a, b) => String(a.first_on).localeCompare(String(b.first_on)));
+  }
+}
+
 const publicProfile = (a) => ({
   id: a.id, username: a.username, name: a.name, phone: a.phone,
   teacher_id: a.teacher_id, is_admin: a.is_admin, approved: a.approved !== false,
@@ -1191,6 +1304,9 @@ export const api = {
   mark: (eid, sid, patch) => adapter.mark(eid, sid, patch),
   markMany: (eid, sids, present) => adapter.markMany(eid, sids, present),
   watchMarks: (eid, cb) => adapter.watchMarks(eid, cb),
+  saveGuest: (r) => adapter.saveGuest(r),
+  deleteGuest: (id) => adapter.deleteGuest(id),
+  markGuest: (eid, gid, patch) => adapter.markGuest(eid, gid, patch),
   addQuote: (t) => adapter.addQuote(t),
   deleteQuote: (id) => adapter.deleteQuote(id),
 };

@@ -589,7 +589,7 @@ export function editStudent(s, after) {
           if (pendingPhoto) await api.uploadPhoto(saved?.id || s.id, pendingPhoto);
           else if (removePhoto) await api.removePhoto(s.id);
           await api.refresh();
-          close(); after?.();
+          close(); after?.(saved);       // 저장된 아이를 넘겨 줍니다 (출석부 → 교적부 등록에서 씁니다)
           toast(isNew ? "등록했습니다." : "저장했습니다.");
         } catch (err) { toast(err.message, "err"); }
       });

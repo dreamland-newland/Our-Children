@@ -2,9 +2,10 @@
 import {
   state, birthdayList, activeCells, cellIdOf, cellMembers, currentVersion, versionLabel, isLoggedIn,
   gradeOf, statusOf, photoOf, schoolYear, cellNameOf,
+  api, guestsToEnroll, ENROLL_AFTER,
 } from "../data.js";
-import { esc, barChart, avatar, showSkyBadge } from "../ui.js";
-import { showStudent } from "./students.js";
+import { esc, barChart, avatar, showSkyBadge, toast, confirmDialog } from "../ui.js";
+import { showStudent, editStudent } from "./students.js";
 import { GRADES } from "../config.js";
 import { bindDownload as bindXlsx } from "../xlsx.js";
 
@@ -57,6 +58,8 @@ export function overviewView() {
       ${isLoggedIn() ? `<a class="btn btn-sm" href="#/import">파일로 가져오기</a>` : ""}
     </div>
   </div>
+
+  ${enrollHtml()}
 
   <div class="grid grid-4" style="margin-bottom:16px">
     ${tile("재적 인원", active.length, "명", `장기결석 ${absent}명 별도`)}
@@ -154,7 +157,66 @@ export function overviewView() {
   </section>`;
 }
 
+/** 출석부에 «처음 온 아이» 로 적어 둔 아이가 여러 주 나오면 등록을 권합니다 */
+function enrollHtml() {
+  if (!isLoggedIn()) return "";
+  const list = guestsToEnroll();
+  if (!list.length) return "";
+  return `
+  <div class="enroll" id="enrollBox">
+    <div class="enroll-h">
+      <span class="enroll-ico">🌱</span>
+      <b>${list.length === 1 ? `${esc(list[0].name)} 이(가) 계속 나오고 있어요`
+                             : `계속 나오고 있는 아이가 ${list.length}명 있어요`}</b>
+    </div>
+    <p class="enroll-p">
+      출석부에 «처음 온 아이» 로 적어 두신 아이입니다.
+      <b>${ENROLL_AFTER}번 넘게</b> 나왔으니 이제 교적부에 넣어 두시는 건 어떨까요?
+    </p>
+    <div class="enroll-list">
+      ${list.map((g) => `
+        <div class="enroll-row" data-g="${g.id}">
+          <b>${esc(g.name)}</b>
+          <span>${esc([g.grade, g.school, g.invited_by && `${g.invited_by} 친구`]
+            .filter(Boolean).join(" · ") || "적어 둔 것 없음")}</span>
+          <span class="enroll-n">${state.guestCounts[g.id] || 0}번</span>
+          <button type="button" class="btn btn-sm" data-later="${g.id}">나중에</button>
+          <button type="button" class="btn btn-primary btn-sm" data-enroll="${g.id}">교적부에 등록</button>
+        </div>`).join("")}
+    </div>
+  </div>`;
+}
+
 export function mount(root, rerender) {
+  //  «교적부에 등록» — 출석부에 적어 둔 내용을 그대로 채운 등록 창이 열립니다
+  root.querySelectorAll("[data-enroll]").forEach((b) => b.addEventListener("click", () => {
+    const g = state.attendGuests.find((x) => x.id === b.dataset.enroll);
+    if (!g) return;
+    editStudent({
+      name: g.name, gender: g.gender || null, grade: g.grade || null,
+      school: g.school || null, phone: g.phone || null,
+      note: [g.note, g.invited_by ? `${g.invited_by} 친구로 처음 옴` : null,
+             g.first_on ? `처음 온 날 ${g.first_on}` : null].filter(Boolean).join(" · ") || null,
+    }, async (saved) => {
+      //  등록이 끝나면 그 아이는 더 이상 «처음 온 아이» 가 아닙니다
+      try {
+        if (saved?.id) await api.saveGuest({ id: g.id, enrolled_student_id: saved.id });
+        await api.refresh();
+        toast(`${g.name} — 교적부에 등록했습니다.`);
+      } catch (e) { toast(e.message, "err"); }
+      rerender();
+    });
+  }));
+  root.querySelectorAll("[data-later]").forEach((b) => b.addEventListener("click", async () => {
+    const g = state.attendGuests.find((x) => x.id === b.dataset.later);
+    if (!g) return;
+    if (!(await confirmDialog(
+      `«${g.name}» 은(는) 다시 묻지 않을까요?\n출석부에는 그대로 남아 있습니다.`,
+      { danger: false, okText: "다시 묻지 않기" }))) return;
+    try { await api.saveGuest({ id: g.id, dismissed: true }); rerender(); }
+    catch (e) { toast(e.message, "err"); }
+  }));
+
   root.querySelectorAll("[data-student]").forEach((el) => el.addEventListener("click", () =>
     showStudent(state.students.find((s) => s.id === el.dataset.student), rerender)));
   bindXlsx(root.querySelector("#xlsxBtn"), async () => {
