@@ -328,18 +328,13 @@ function visitRow(s) {
         ${who ? `<span class="mp-by">${esc(who)}</span>` : ""}
       </div>` : ""}
     <div class="att-memo"${openMemos.has(s.id) ? "" : " hidden"}>
-      <textarea rows="2" placeholder="결석 사유 · 통화 내용을 적어 두세요" ${canEdit() ? "" : "disabled"}>${esc(m)}</textarea>
-      ${canEdit() ? `
+      <textarea rows="2" placeholder="결석 사유 · 통화 내용을 적어 두세요"
+        ${canEdit() ? "" : 'readonly data-locked="1"'}>${esc(m)}</textarea>
       <div class="att-memo-f">
         <small>${who ? `${esc(who)} 적음` : ""}</small>
         <button class="btn btn-sm" data-cancel="${s.id}">닫기</button>
-        <button class="btn btn-primary btn-sm" data-save="${s.id}">저장</button>
-      </div>` : `
-      <div class="att-memo-lock">
-        <span>지난 기록이라 <b>잠겨 있습니다.</b> 고치시려면 «수정하기» 를 눌러 주세요.</span>
-        <button type="button" class="btn btn-primary btn-sm" data-unlock="${s.id}">✏️ 수정하기</button>
-        <button type="button" class="btn btn-sm" data-cancel="${s.id}">닫기</button>
-      </div>`}
+        ${canEdit() ? `<button class="btn btn-primary btn-sm" data-save="${s.id}">저장</button>` : ""}
+      </div>
     </div>
   </div>`;
 }
@@ -524,7 +519,11 @@ function wireTaps(body, rerender) {
       setTimeout(() => el.classList.remove("tap1"), 420);
       return;
     }
-    if (!canEdit()) { toast("지난 기록입니다. 위 «수정» 을 누르면 고칠 수 있습니다."); return; }
+    if (!canEdit()) {
+      const r = el.getBoundingClientRect();
+      floatHint(r.left + r.width / 2, r.top, "위 «✏️ 수정» 을 눌러 주세요");
+      return;
+    }
     await toggle(el, id, rerender);
   });
 
@@ -573,13 +572,20 @@ function wireMemo(body, rerender) {
     openMemos.delete(b.dataset.cancel);
     const peek = box.querySelector(".att-memo-p"); if (peek) peek.hidden = false;
   }));
-  body.querySelectorAll("[data-unlock]").forEach((b) => b.addEventListener("click", (e) => {
-    e.stopPropagation();
-    unlocked = true;                       // «수정» 을 누른 것과 같습니다
-    openMemos.add(b.dataset.unlock);       // 열어 두었던 칸은 그대로 열린 채로
-    toast("이제 고칠 수 있습니다.");
-    rerender();
-  }));
+  //  잠긴 기록에서 적으려고 하면 — 두꺼운 안내 대신, 누른 자리에서 쪽지가 살짝 떠올랐다 사라집니다
+  body.querySelectorAll("textarea[data-locked]").forEach((t) => {
+    const nudge = (e) => {
+      e.preventDefault();
+      t.blur();
+      floatHint(e.clientX ?? 0, e.clientY ?? 0, "위 «✏️ 수정» 을 눌러 주세요");
+    };
+    t.addEventListener("pointerdown", nudge);
+    t.addEventListener("focus", () => {
+      t.blur();
+      const r = t.getBoundingClientRect();
+      floatHint(r.left + r.width / 2, r.top + 16, "위 «✏️ 수정» 을 눌러 주세요");
+    });
+  });
   body.querySelectorAll("[data-save]").forEach((b) => b.addEventListener("click", async (e) => {
     e.stopPropagation();
     const id = b.dataset.save;
@@ -856,20 +862,7 @@ const TOUR = () => [
       });
     } },
 
-  // ── ⑤ 새로고침 (보여 드리기만) ───────────────────────
-  isDesktop()
-    ? { title: "↻ 를 누르면 새로고침",
-        body: "다른 선생님이 방금 누른 내용까지 받아 옵니다.<br>누르지 않아도 1분마다 저절로 맞춰집니다.",
-        note: "출석당번이 두 분이어도 서로 누른 게 섞이지 않습니다. 각자 누른 아이만 저장돼요.",
-        art: `<div class="tt-play mid"><span class="tt-ico">${ICO.redo}</span></div>` }
-    : { title: "아래로 당기면 새로고침",
-        body: "클로버가 다 자라면 손을 놓으세요.<br>다른 선생님이 누른 내용까지 바로 맞춰집니다.",
-        note: "출석당번이 두 분이어도 서로 누른 게 섞이지 않습니다. 각자 누른 아이만 저장돼요.",
-        art: `<div class="tt-play mid"><div class="tt-ring">
-                <svg viewBox="0 0 52 52"><circle class="rg-bg" cx="26" cy="26" r="21"/>
-                <circle class="tt-arc" cx="26" cy="26" r="21"/></svg><i>🍀</i></div></div>` },
-
-  // ── ⑥ 처음 온 아이 ───────────────────────────────────
+  // ── ⑤ 처음 온 아이 ───────────────────────────────────
   { title: "교적부에 없는 아이가 왔다면",
     body: "친구 따라왔거나 교회를 둘러보러 온 아이는 명단 <b>맨 아래</b> " +
           "«＋ 처음 온 아이» 로 적어 두세요. 이름만 적으면 바로 오늘 출석이 됩니다.",
@@ -894,6 +887,19 @@ const TOUR = () => [
         done();
       });
     } },
+
+  // ── ⑥ 새로고침 (보여 드리기만) ───────────────────────
+  isDesktop()
+    ? { title: "↻ 를 누르면 새로고침",
+        body: "다른 선생님이 방금 누른 내용까지 받아 옵니다.<br>누르지 않아도 1분마다 저절로 맞춰집니다.",
+        note: "출석당번이 두 분이어도 서로 누른 게 섞이지 않습니다. 각자 누른 아이만 저장돼요.",
+        art: `<div class="tt-play mid"><span class="tt-ico">${ICO.redo}</span></div>` }
+    : { title: "아래로 당기면 새로고침",
+        body: "클로버가 다 자라면 손을 놓으세요.<br>다른 선생님이 누른 내용까지 바로 맞춰집니다.",
+        note: "출석당번이 두 분이어도 서로 누른 게 섞이지 않습니다. 각자 누른 아이만 저장돼요.",
+        art: `<div class="tt-play mid"><div class="tt-ring">
+                <svg viewBox="0 0 52 52"><circle class="rg-bg" cx="26" cy="26" r="21"/>
+                <circle class="tt-arc" cx="26" cy="26" r="21"/></svg><i>🍀</i></div></div>` },
 
   // ── ⑦ 지난 기록 · 행사 ───────────────────────────────
   { title: "지난 기록 · 수련회 · 행사",
@@ -1227,6 +1233,25 @@ async function ensureEvent() {
   if (ev) return ev;
   ev = await api.openEvent(target);
   return ev;
+}
+
+/** 누른 자리에서 살짝 떠올랐다 사라지는 쪽지 — 창을 띄우지 않고 한마디만 */
+function floatHint(x, y, text) {
+  let layer = document.getElementById("attFx");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "attFx"; layer.className = "att-fx";
+    document.body.appendChild(layer);
+  }
+  layer.querySelectorAll(".att-hint").forEach((e) => e.remove());   // 겹쳐 쌓이지 않게
+  const el = document.createElement("span");
+  el.className = "att-hint";
+  el.textContent = text;
+  el.style.left = `${Math.min(Math.max(x, 90), window.innerWidth - 90)}px`;
+  el.style.top = `${Math.max(y - 12, 56)}px`;
+  layer.appendChild(el);
+  buzz(8);
+  setTimeout(() => el.remove(), 1500);
 }
 
 // ── 작은 즐거움 ─────────────────────────────────────────────
