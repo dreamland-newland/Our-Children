@@ -23,11 +23,14 @@
   --shadow:          0 1px 2px rgba(11,11,11,.05), 0 8px 24px rgba(11,11,11,.06);
   --radius:          12px;
   --radius-sm:       8px;
-  /*  애플고딕(Apple SD Gothic Neo)을 맨 앞에 둡니다.
-      맥·아이폰·아이패드에서는 이 글꼴로 통일되고,
-      윈도우·안드로이드처럼 애플고딕이 없는 기기에서는 뒤의 것으로 자연스럽게 넘어갑니다. */
-  --font: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, system-ui,
-          "Segoe UI", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  /*  글꼴 차례 — 앞에 있는 것부터 «그 기기에 있으면» 씁니다.
+      · 맥 · 아이폰 · 아이패드  → 애플고딕(Apple SD Gothic Neo)
+      · 갤럭시 · 윈도우          → Pretendard (index.html 에서 웹으로 받아옵니다)
+      · 인터넷이 없거나 못 받으면 → 맑은고딕 · 본고딕 등 기기 기본 글꼴
+      애플 기기에서는 애플고딕이 먼저 잡혀서 Pretendard 파일을 아예 내려받지 않습니다. */
+  --font: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
+          "Pretendard Variable", Pretendard,
+          system-ui, "Segoe UI", "Malgun Gothic", "Noto Sans KR", sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
