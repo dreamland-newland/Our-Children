@@ -871,21 +871,50 @@ const TOUR = () => [
     note: "교적부에는 넣지 않습니다. " + ENROLL_AFTER + "번 넘게 나오면 개요 화면에서 «교적부에 등록할까요?» 하고 물어봐요.",
     art: `<div class="tt-play">
             <div class="tt-ch"><b>오늘 처음 온 아이</b></div>
+            <div class="tt-guests"></div>
+            <div class="tt-type" hidden><span class="tt-typed"></span><i class="tt-caret"></i></div>
             <button type="button" class="tt-add" data-pguest>＋ 처음 온 아이</button>
-            <div class="tt-guest" hidden>
-              <div class="tt-chips"><span class="tt-chip tt-g on">박하늘</span></div>
-              <small>김서연 친구 · 중2 — 오늘 출석으로 들어갔어요</small>
-            </div>
           </div>`,
     wire(box, done) {
-      box.querySelector("[data-pguest]").addEventListener("click", (e) => {
-        const g = box.querySelector(".tt-guest");
-        if (!g.hidden) return;
-        g.hidden = false;
-        e.currentTarget.hidden = true;
-        buzz(24); burstAt(g.querySelector(".tt-chip"));
-        done();
-      });
+      const NAMES = [{ n: "박하늘", s: "김서연 친구 · 중2" }, { n: "정예솔", s: "박하늘 친구 · 중2" }];
+      let made = 0, busy2 = false;
+      const list = box.querySelector(".tt-guests");
+      const type = box.querySelector(".tt-type");
+      const typed = box.querySelector(".tt-typed");
+      const add = box.querySelector(".tt-add");
+
+      const run = () => {
+        if (busy2 || made >= NAMES.length) return;
+        busy2 = true;
+        const { n, s: sub } = NAMES[made];
+        add.hidden = true; type.hidden = false; typed.textContent = "";
+        let i = 0;
+        const t = setInterval(() => {                    // 이름이 한 글자씩 쳐집니다
+          typed.textContent = n.slice(0, ++i);
+          buzz(6);
+          if (i >= n.length) {
+            clearInterval(t);
+            setTimeout(() => {
+              type.hidden = true;
+              const chip = document.createElement("span");
+              chip.className = "tt-chip tt-g on";
+              chip.innerHTML = `${n}<small>${sub}</small>`;
+              list.appendChild(chip);
+              made += 1;
+              buzz(24); burstAt(chip);
+              //  손님이 둘일 수도 있으니 ＋ 는 이름표 옆에 작게 남습니다
+              add.hidden = false;
+              add.classList.add("small");
+              add.textContent = "＋";
+              add.setAttribute("aria-label", "처음 온 아이 더 넣기");
+              if (made >= NAMES.length) add.hidden = true;
+              busy2 = false;
+              done();
+            }, 420);
+          }
+        }, 110);
+      };
+      add.addEventListener("click", run);
     } },
 
   // ── ⑥ 새로고침 (보여 드리기만) ───────────────────────
@@ -931,26 +960,19 @@ export function openTour() {
       <div class="tt-art">
         ${st.art}
         <span class="tt-count">${i + 1} / ${steps.length}</span>
-        <button type="button" class="tt-x" data-x aria-label="닫기">✕</button>
+        <button type="button" class="tt-x" id="ttX" aria-label="닫기">✕</button>
       </div>
+      ${needs ? `<div class="tt-task${okAlready ? " ok" : ""}" id="ttTask">
+          <span class="tt-tick">${okAlready ? "✓" : "👆"}</span>
+          <span>${okAlready ? "잘하셨어요!" : st.task}</span>
+        </div>` : ""}
       <div class="tt-txt">
         <h4>${st.title}</h4>
         <p>${st.body}</p>
-        ${needs ? `<div class="tt-task${okAlready ? " ok" : ""}" id="ttTask">
-            <span class="tt-tick">${okAlready ? "✓" : "👆"}</span>
-            <span>${okAlready ? "잘하셨어요!" : st.task}</span>
-          </div>` : ""}
         ${st.note ? `<small>${st.note}</small>` : ""}
-      </div>
-      <div class="tt-nav">
-        <span class="tt-dots">${steps.map((_, n) =>
-          `<i class="${n === i ? "on" : ""}${cleared.has(n) ? " done" : ""}" data-go="${n}"></i>`).join("")}</span>
-        ${i === steps.length - 1 ? "" : `<button type="button" class="tt-skip" data-x>그만 볼래요</button>`}
-        ${i > 0 ? `<button type="button" class="btn btn-sm" data-prev>이전</button>` : ""}
-        <button type="button" class="btn btn-primary btn-sm" data-next>
-          ${i === steps.length - 1 ? "다 알았어요" : "다음"}</button>
       </div>`;
 
+    box.querySelector("#ttX").addEventListener("click", () => close());
     const art = box.querySelector(".tt-art");
     //  «여기를 누르세요» — 눌러야 할 것을 동그랗게 반짝이게 합니다
     const point = st.hint && !okAlready ? art.querySelector(st.hint) : null;
@@ -968,12 +990,31 @@ export function openTour() {
       box.querySelectorAll("[data-go]")[i]?.classList.add("done");
     });
 
-    box.querySelector("[data-next]").addEventListener("click", () => {
+    drawNav();
+  };
+
+  //  단추 줄은 창 «밖» 아래 가운데에 고정해 둡니다.
+  //  창 크기가 장마다 달라져도 «다음» 자리는 늘 같은 곳에 있습니다.
+  const nav = document.createElement("div");
+  nav.className = "tt-nav";
+  const drawNav = () => {
+    nav.innerHTML = `
+      <span class="tt-dots">${steps.map((_, n) =>
+        `<i class="${n === i ? "on" : ""}${cleared.has(n) ? " done" : ""}" data-go="${n}"></i>`).join("")}</span>
+      <div class="tt-btns">
+        <button type="button" class="tt-skip" data-x
+          ${i === steps.length - 1 ? 'hidden-slot="1" tabindex="-1"' : ""}>그만 볼래요</button>
+        <button type="button" class="btn btn-sm" data-prev
+          ${i > 0 ? "" : 'hidden-slot="1" tabindex="-1"'}>이전</button>
+        <button type="button" class="btn btn-primary btn-sm" data-next>
+          ${i === steps.length - 1 ? "다 알았어요" : "다음"}</button>
+      </div>`;
+    nav.querySelector("[data-next]").addEventListener("click", () => {
       if (i === steps.length - 1) close(); else { i += 1; draw(); }
     });
-    box.querySelector("[data-prev]")?.addEventListener("click", () => { i -= 1; draw(); });
-    box.querySelectorAll("[data-x]").forEach((x) => x.addEventListener("click", () => close()));
-    box.querySelectorAll("[data-go]").forEach((d) => d.addEventListener("click", () => {
+    nav.querySelector("[data-prev]")?.addEventListener("click", () => { i -= 1; draw(); });
+    nav.querySelectorAll("[data-x]").forEach((x) => x.addEventListener("click", () => close()));
+    nav.querySelectorAll("[data-go]").forEach((d) => d.addEventListener("click", () => {
       i = Number(d.dataset.go); draw();
     }));
   };
@@ -981,7 +1022,7 @@ export function openTour() {
   let close = () => {};
   close = modal({
     bare: true, slim: true, body: box,
-    onMount: (_, c) => { close = c; },
+    onMount: (m, c) => { close = c; m.parentElement?.appendChild(nav); },
   });
   draw();
   return close;
@@ -1096,11 +1137,25 @@ function showGuest(g, after) {
         ${rows.map(([k, v]) => `<div class="dtl-row"><span class="k">${esc(k)}</span>
           <span class="v">${esc(String(v))}</span></div>`).join("")
           || `<div class="empty" style="padding:16px 0">적어 둔 것이 없습니다.</div>`}
+      </div>
+      <div class="form-note" style="margin-bottom:0">
+        출석을 풀어도 이름은 목록에 그대로 남습니다.
+        아주 지우시려면 아래 <b>«삭제»</b> 를 눌러 주세요.
       </div>`,
-    footer: `<button class="btn" data-close>닫기</button>
+    footer: `<button class="btn btn-danger btn-sm" id="gDel2">삭제</button>
+             <button class="btn" data-close>닫기</button>
              <button class="btn btn-primary" id="gEdit">고치기</button>`,
     onMount(box, close) {
       box.querySelector("#gEdit").addEventListener("click", () => { close(); guestForm(g, after); });
+      box.querySelector("#gDel2").addEventListener("click", async () => {
+        if (!(await confirmDialog(`«${g.name}» 을(를) 출석부에서 지울까요?\n` +
+                                  `지금까지의 출석 기록도 함께 사라집니다.`))) return;
+        try {
+          await api.deleteGuest(g.id);
+          marks.delete(g.id);
+          close(); toast("지웠습니다."); after?.();
+        } catch (e) { toast(e.message, "err"); }
+      });
     },
   });
 }
@@ -1201,7 +1256,8 @@ async function load(rerender, quiet = false) {
   try {
     const rows = await api.listMarks(ev.id);
     const next = new Map();
-    rows.forEach((r) => next.set(r.student_id, r));
+    //  한 줄은 «교적부 아이» 이거나 «처음 온 아이» 입니다 — 둘 다 챙겨야 목록에서 사라지지 않습니다
+    rows.forEach((r) => next.set(r.student_id || r.guest_id, r));
     const changed = next.size !== marks.size
       || [...next].some(([k, v]) => marks.get(k)?.present !== v.present || marks.get(k)?.memo !== v.memo);
     marks = next;
