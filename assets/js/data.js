@@ -320,14 +320,24 @@ const supabaseAdapter = {
     if (error) throw new Error(translate(error.message));
     return data || [];
   },
-  /** 한 아이의 «왔다/안 왔다» 또는 심방 기록을 저장합니다 */
+  /** 한 아이의 «왔다/안 왔다» 또는 심방 기록을 저장합니다.
+   *  한 번에 밀어 넣어 보고(빠릅니다), 서버가 거절하면
+   *  «찾아서 고치기» 로 한 번 더 시도합니다 — 어떤 설정에서도 저장되도록. */
   async mark(eventId, studentId, patch) {
     const row = { event_id: eventId, student_id: studentId, ...patch,
                   marked_at: new Date().toISOString() };
     const { data, error } = await sb.from("attend_marks")
       .upsert(row, { onConflict: "event_id,student_id" }).select().single();
-    if (error) throw new Error(translate(error.message));
-    return data;
+    if (!error) return data;
+
+    const found = await sb.from("attend_marks").select("id")
+      .eq("event_id", eventId).eq("student_id", studentId).maybeSingle();
+    if (found.error) throw new Error(translate(error.message));
+    const r = found.data
+      ? await sb.from("attend_marks").update(row).eq("id", found.data.id).select().single()
+      : await sb.from("attend_marks").insert(row).select().single();
+    if (r.error) throw new Error(translate(r.error.message));
+    return r.data;
   },
   /** 셀 하나를 한꺼번에 (전체 출석 / 전체 결석) */
   async markMany(eventId, studentIds, present) {

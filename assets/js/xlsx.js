@@ -277,15 +277,16 @@ export async function exportAttendance(ev, groups, marks) {
     const label = dateLabel(ev.held_on);
     const what = ev.title ? `${ev.kind} ${ev.title}` : ev.kind;
 
-    const rows = [[`${label}  ${what}`], [], ["셀", "이름", "학년", "출결", "결석자 심방"]];
+    const rows = [[`${label}  ${what}`], [], ["셀", "이름", "학년", "출결", "결석자 심방", "적은 사람"]];
     let inn = 0, tot = 0;
     for (const g of groups) {
       for (const s of g.kids) {
         tot += 1; if (on(s.id)) inn += 1;
-        rows.push([g.name, s.name, gradeOf(s) || "", on(s.id) ? "출석" : "결석", memo(s.id)]);
+        rows.push([g.name, s.name, gradeOf(s) || "", on(s.id) ? "출석" : "결석",
+                   memo(s.id), marks.get(s.id)?.memo_by || ""]);
       }
     }
-    add(X, wb, "명단", rows, [10, 12, 8, 7, 46]);
+    add(X, wb, "명단", rows, [10, 12, 8, 7, 42, 12]);
 
     const sum = [["셀", "인원", "출석", "결석", "출석률"]];
     for (const g of groups) {

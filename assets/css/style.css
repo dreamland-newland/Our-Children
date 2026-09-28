@@ -1550,18 +1550,42 @@ table.data.peek td.hit {
   font-family: inherit; font-size: 11.5px; font-weight: 600;
   padding: 3px 10px; border-radius: 999px;
 }
+/* 심방 기록이 있으면 단추에 불이 들어옵니다 */
+.att-memo-b.on {
+  color: var(--series-2); font-weight: 700;
+  background: color-mix(in srgb, var(--series-2) 13%, var(--surface));
+  border-color: color-mix(in srgb, var(--series-2) 42%, transparent);
+}
 .att-memo-p {
-  margin: 1px 0 0 26px; padding: 5px 10px; font-size: 12.5px; line-height: 1.55;
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 2px 0 0 26px; padding: 6px 11px; font-size: 12.5px; line-height: 1.55;
   color: var(--text-secondary); border-left: 2px solid var(--series-2);
   background: color-mix(in srgb, var(--series-2) 7%, transparent);
   border-radius: 0 8px 8px 0;
-  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.att-memo-p .mp-t {
+  flex: 1; min-width: 0;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+}
+.att-memo-p .mp-by {
+  flex: none; font-size: 11px; font-weight: 650; white-space: nowrap;
+  color: color-mix(in srgb, var(--series-2) 62%, var(--text-primary));
 }
 .att-memo { margin: 5px 0 2px 26px; display: grid; gap: 6px; }
 .att-memo[hidden], .att-memo-p[hidden] { display: none; }
 .att-memo textarea { font-size: 13.5px; line-height: 1.55; resize: vertical; }
 .att-memo-f { display: flex; align-items: center; gap: 7px; }
 .att-memo-f small { flex: 1; font-size: 11px; color: var(--text-muted); }
+/* 지난 기록이라 잠겨 있을 때 — 칸 안에서 바로 풀 수 있게 */
+.att-memo-lock {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  padding: 8px 12px; border-radius: 10px; font-size: 12px; line-height: 1.55;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--warning) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warning) 36%, var(--border));
+}
+.att-memo-lock span { flex: 1; min-width: 0; }
+.att-memo-lock b { color: var(--text-primary); font-weight: 700; }
 
 /* ── 지난 기록 ─────────────────────────────────────────── */
 .att-log { display: grid; gap: 2px; max-height: 58vh; overflow: auto; }
@@ -1745,6 +1769,21 @@ html:has(body.att-page), body.att-page { overscroll-behavior-y: contain; }
 }
 .tt-chip.tap1 { border-color: var(--series-1); box-shadow: 0 0 0 3px var(--series-1-soft); }
 .tt-chip.pop { animation: chipPop .42s cubic-bezier(.2,.8,.3,1.2); }
+.tt-peek[hidden], .tt-guest[hidden] { display: none; }   /* 누르기 전에는 숨어 있어야 합니다 */
+.tt-add {
+  width: 100%; padding: 10px 14px; cursor: pointer; font-family: inherit;
+  font-size: 12.5px; font-weight: 650; color: var(--text-secondary);
+  background: var(--surface); border: 1px dashed var(--border-strong); border-radius: 12px;
+}
+.tt-guest { display: grid; gap: 6px; justify-items: center; }
+.tt-guest small { font-size: 11px; color: var(--text-muted); }
+.tt-chip.tt-g { border-style: dashed; }
+.tt-chip.tt-g.on {
+  background: color-mix(in srgb, var(--series-2) 13%, var(--surface));
+  border-color: color-mix(in srgb, var(--series-2) 40%, var(--border-strong));
+  color: color-mix(in srgb, var(--series-2) 62%, var(--text-primary));
+  border-style: solid;
+}
 .tt-peek {
   display: flex; align-items: center; gap: 9px; width: 100%;
   padding: 8px 11px; border-radius: 12px; background: var(--surface);

@@ -63,9 +63,11 @@ update public.attend_events
    set created_by_name = null, updated_by_name = null
  where created_by_name is not null or updated_by_name is not null;
 
+--  출석을 누른 사람 이름만 지웁니다.
+--  «심방을 적은 사람»(memo_by)은 뒤에 누가 전화했는지 알아야 해서 그대로 둡니다.
 update public.attend_marks
-   set marked_by_name = null, memo_by = null
- where marked_by_name is not null or memo_by is not null;
+   set marked_by_name = null
+ where marked_by_name is not null;
 
 -- ── RLS — 출석부와 똑같이, 로그인한 교사진만 ────────────────
 alter table public.attend_guests enable row level security;

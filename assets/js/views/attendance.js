@@ -30,6 +30,7 @@ let live = false;              // 실시간 연결이 살아 있는가
 let redraw = null;             // 화면 다시 그리기 (app.js 가 넘겨 준 것)
 let tourQueued = false;        // 처음 오신 분께 사용법을 한 번만 띄우기 위한 표시
 let wipHidden = false;         // «공사중» 안내를 이번에만 접어 둔 상태 (다시 들어오면 또 뜹니다)
+let openMemos = new Set();     // 펼쳐 둔 심방 칸 (저장해도 닫히지 않게)
 let holdRender = false;        // 당겨서 새로고침하는 동안엔 화면을 갈아엎지 않습니다
 let pendingRender = false;     //  (다 끝나고 판이 접힌 뒤에 한 번만 다시 그립니다)
 
@@ -40,6 +41,7 @@ export function stopWatch() {
   if (unwatch) { try { unwatch(); } catch { /* 이미 끊김 */ } unwatch = null; }
   live = false;
   wipHidden = false;             // 다시 들어오면 «공사중» 안내를 또 보여 드립니다
+  openMemos = new Set();
   document.body.classList.remove("att-page");
 }
 
@@ -313,21 +315,31 @@ function faceCell(s) {
 /** 결석만 볼 때 — 이름 아래에 심방(결석 사유) 칸이 접혀 있습니다 */
 function visitRow(s) {
   const m = memoOf(s.id);
+  const who = marks.get(s.id)?.memo_by || "";
   return `<div class="att-visit" data-v="${s.id}">
     <div class="att-row" ${kidAttrs(s)}>
       <span class="att-dot"></span>
       <span class="att-nm">${esc(s.name)}</span>
       <span class="att-sub">${esc(gradeOf(s) || "")}</span>
-      <button class="att-memo-b" data-memo="${s.id}">${m ? "심방 ✎" : "심방"}</button>
+      <button class="att-memo-b${m ? " on" : ""}" data-memo="${s.id}">심방${m ? " ✎" : ""}</button>
     </div>
-    ${m ? `<div class="att-memo-p" data-peek="${s.id}">${esc(m)}</div>` : ""}
-    <div class="att-memo" hidden>
+    ${m ? `<div class="att-memo-p" data-peek="${s.id}"${openMemos.has(s.id) ? " hidden" : ""}>
+        <span class="mp-t">${esc(m)}</span>
+        ${who ? `<span class="mp-by">${esc(who)}</span>` : ""}
+      </div>` : ""}
+    <div class="att-memo"${openMemos.has(s.id) ? "" : " hidden"}>
       <textarea rows="2" placeholder="결석 사유 · 통화 내용을 적어 두세요" ${canEdit() ? "" : "disabled"}>${esc(m)}</textarea>
+      ${canEdit() ? `
       <div class="att-memo-f">
-        <small></small>
+        <small>${who ? `${esc(who)} 적음` : ""}</small>
         <button class="btn btn-sm" data-cancel="${s.id}">닫기</button>
-        ${canEdit() ? `<button class="btn btn-primary btn-sm" data-save="${s.id}">저장</button>` : ""}
-      </div>
+        <button class="btn btn-primary btn-sm" data-save="${s.id}">저장</button>
+      </div>` : `
+      <div class="att-memo-lock">
+        <span>지난 기록이라 <b>잠겨 있습니다.</b> 고치시려면 «수정하기» 를 눌러 주세요.</span>
+        <button type="button" class="btn btn-primary btn-sm" data-unlock="${s.id}">✏️ 수정하기</button>
+        <button type="button" class="btn btn-sm" data-cancel="${s.id}">닫기</button>
+      </div>`}
     </div>
   </div>`;
 }
@@ -551,13 +563,22 @@ function wireMemo(body, rerender) {
     const peek = box.querySelector(".att-memo-p");
     pane.hidden = !pane.hidden;
     if (peek) peek.hidden = !pane.hidden;
-    if (!pane.hidden) pane.querySelector("textarea")?.focus();
+    const id = b.dataset.memo;
+    if (pane.hidden) openMemos.delete(id); else { openMemos.add(id); pane.querySelector("textarea")?.focus(); }
   }));
   body.querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", (e) => {
     e.stopPropagation();
     const box = b.closest(".att-visit");
     box.querySelector(".att-memo").hidden = true;
+    openMemos.delete(b.dataset.cancel);
     const peek = box.querySelector(".att-memo-p"); if (peek) peek.hidden = false;
+  }));
+  body.querySelectorAll("[data-unlock]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    unlocked = true;                       // «수정» 을 누른 것과 같습니다
+    openMemos.add(b.dataset.unlock);       // 열어 두었던 칸은 그대로 열린 채로
+    toast("이제 고칠 수 있습니다.");
+    rerender();
   }));
   body.querySelectorAll("[data-save]").forEach((b) => b.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -568,14 +589,22 @@ function wireMemo(body, rerender) {
       await ensureEvent();
       const patch = {
         present: isIn(id), memo: memo || null,
+        //  심방은 «누가 전화했는지» 가 뒤에 필요하므로 이름을 남깁니다
+        //  (출석을 누른 사람 이름은 남기지 않습니다 — 그건 별개입니다)
+        memo_by: memo ? (state.profile?.name || null) : null,
         memo_at: memo ? new Date().toISOString() : null,
       };
+      b.disabled = true; b.textContent = "저장 중…";
       const row = isGuest(id) ? await api.markGuest(ev.id, id, patch)
                               : await api.mark(ev.id, id, patch);
       marks.set(id, { ...marks.get(id), ...row });
       toast(memo ? "심방 기록을 저장했습니다." : "심방 기록을 지웠습니다.");
+      openMemos = memo ? new Set([...openMemos, id]) : new Set([...openMemos].filter((x) => x !== id));
       rerender();
-    } catch (err) { toast(err.message, "err"); }
+    } catch (err) {
+      b.disabled = false; b.textContent = "저장";
+      toast("저장하지 못했습니다 — " + err.message, "err");
+    }
   }));
 }
 
@@ -840,11 +869,37 @@ const TOUR = () => [
                 <svg viewBox="0 0 52 52"><circle class="rg-bg" cx="26" cy="26" r="21"/>
                 <circle class="tt-arc" cx="26" cy="26" r="21"/></svg><i>🍀</i></div></div>` },
 
-  // ── ⑥ 지난 기록 · 손님 ───────────────────────────────
-  { title: "지난 기록 · 수련회 · 처음 온 아이",
+  // ── ⑥ 처음 온 아이 ───────────────────────────────────
+  { title: "교적부에 없는 아이가 왔다면",
+    body: "친구 따라왔거나 교회를 둘러보러 온 아이는 명단 <b>맨 아래</b> " +
+          "«＋ 처음 온 아이» 로 적어 두세요. 이름만 적으면 바로 오늘 출석이 됩니다.",
+    task: "«＋ 처음 온 아이» 를 눌러 보세요",
+    hint: "[data-pguest]",
+    note: "교적부에는 넣지 않습니다. " + ENROLL_AFTER + "번 넘게 나오면 개요 화면에서 «교적부에 등록할까요?» 하고 물어봐요.",
+    art: `<div class="tt-play">
+            <div class="tt-ch"><b>오늘 처음 온 아이</b></div>
+            <button type="button" class="tt-add" data-pguest>＋ 처음 온 아이</button>
+            <div class="tt-guest" hidden>
+              <div class="tt-chips"><span class="tt-chip tt-g on">박하늘</span></div>
+              <small>김서연 친구 · 중2 — 오늘 출석으로 들어갔어요</small>
+            </div>
+          </div>`,
+    wire(box, done) {
+      box.querySelector("[data-pguest]").addEventListener("click", (e) => {
+        const g = box.querySelector(".tt-guest");
+        if (!g.hidden) return;
+        g.hidden = false;
+        e.currentTarget.hidden = true;
+        buzz(24); burstAt(g.querySelector(".tt-chip"));
+        done();
+      });
+    } },
+
+  // ── ⑦ 지난 기록 · 행사 ───────────────────────────────
+  { title: "지난 기록 · 수련회 · 행사",
     body: "<b>‹ ›</b> 로 주를 옮기고, 날짜를 누르면 <b>수련회·행사</b> 도 만들 수 있습니다.<br>" +
-          "맨 아래 <b>«＋ 처음 온 아이»</b> 로 친구 따라온 아이도 적어 둘 수 있어요.",
-    note: "지난 기록은 잠겨서 열립니다 — «수정» 을 눌러야 고쳐져요.",
+          "시계 단추를 누르면 지금까지 기록이 전부 나옵니다.",
+    note: "지난 기록은 잠겨서 열립니다 — «수정» 을 눌러야 고쳐져요. (심방 칸 안에서도 바로 풀 수 있습니다.)",
     art: `<div class="tt-play mid">
             <div class="tt-date"><span>‹</span><b>9/20 (9월 3주차)</b><span>›</span></div>
             <span class="tt-ico">${ICO.log}</span>
