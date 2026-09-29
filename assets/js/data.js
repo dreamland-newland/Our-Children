@@ -274,11 +274,11 @@ const supabaseAdapter = {
     const { error } = await sb.from("attend_guests").delete().eq("id", id);
     if (error) throw new Error(translate(error.message));
     state.attendGuests = state.attendGuests.filter((g) => g.id !== id);
-    delete state.guestCounts[id];
+    delete state.guestCounts[id]; delete state.guestLastOn[id];
   },
   /** 손님의 출석 표시 — 부분 인덱스라서 upsert 대신 찾아서 고칩니다 */
   async markGuest(eventId, guestId, patch) {
-    const found = await sb.from("attend_marks").select("id")
+    const found = await sb.from("attend_marks").select("id,present")
       .eq("event_id", eventId).eq("guest_id", guestId).maybeSingle();
     if (found.error) throw new Error(translate(found.error.message));
     //  «누가 눌렀는지» 는 남기지 않습니다 — 누가 했는지가 중요한 기록이 아니라서요
@@ -289,6 +289,8 @@ const supabaseAdapter = {
           .insert({ event_id: eventId, guest_id: guestId, student_id: null, ...body })
           .select().single();
     if (r.error) throw new Error(translate(r.error.message));
+    bumpGuestStat(guestId, state.attendEvents.find((e) => e.id === eventId)?.held_on,
+                  !!found.data?.present, !!r.data.present);
     return r.data;
   },
 
@@ -807,7 +809,7 @@ const demoAdapter = {
     demo.attend_guests = (demo.attend_guests || []).filter((g) => g.id !== id);
     demo.attend_marks = (demo.attend_marks || []).filter((m) => m.guest_id !== id);
     state.attendGuests = state.attendGuests.filter((g) => g.id !== id);
-    delete state.guestCounts[id];
+    delete state.guestCounts[id]; delete state.guestLastOn[id];
     this.persist();
   },
   async markGuest(eventId, guestId, patch) {
@@ -1248,6 +1250,23 @@ function upsertLocalEvent(ev) {
 }
 
 /** 손님 목록에 새 아이를 끼워 넣거나 갱신합니다 */
+/** 손님의 «몇 번 나왔는지 · 마지막으로 온 날» 을 화면에서도 바로 맞춰 둡니다.
+ *  (서버에 다시 묻지 않고 방금 누른 것만 반영합니다 — 4주 등록 물음과
+ *   «최근 4주에 왔던 아이» 가 새로고침 없이도 맞게 보이도록) */
+function bumpGuestStat(guestId, heldOn, wasPresent, nowPresent) {
+  if (wasPresent === nowPresent) return;
+  const n = state.guestCounts[guestId] || 0;
+  if (nowPresent) {
+    state.guestCounts[guestId] = n + 1;
+    if (heldOn && (!state.guestLastOn[guestId] || heldOn > state.guestLastOn[guestId]))
+      state.guestLastOn[guestId] = heldOn;
+  } else {
+    state.guestCounts[guestId] = Math.max(0, n - 1);
+    //  마지막으로 온 날은 다른 모임까지 봐야 알 수 있어서, 그 날을 지운 경우만 비웁니다.
+    if (heldOn && state.guestLastOn[guestId] === heldOn) delete state.guestLastOn[guestId];
+  }
+}
+
 function upsertLocalGuest(g) {
   const i = state.attendGuests.findIndex((x) => x.id === g.id);
   if (i >= 0) state.attendGuests[i] = g;

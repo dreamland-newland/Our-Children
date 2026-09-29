@@ -599,9 +599,14 @@ table.data .num { font-variant-numeric: tabular-nums; color: var(--text-secondar
 /*  사용법 안내창 —
     창은 «아래 가장자리»를 고정해 두고 위로 자라게 합니다.
     그래야 바로 밑에 붙인 단추 줄이 장마다 움직이지 않습니다. */
+/*  안내 창과 그 아래 단추 줄은 «한 묶음» 으로 움직입니다.
+    --tt-gap 은 그 묶음을 화면 맨 아래에서 얼마나 띄울지입니다 — 이 한 줄만 고치면 같이 올라갑니다. */
 .overlay:has(.tt) {
+  --tt-gap: clamp(20px, 10vh, 84px);
+  --tt-nav-h: 72px;
   place-items: end center;
-  padding-bottom: 86px; padding-top: 16px;
+  padding-top: 16px;
+  padding-bottom: calc(var(--tt-nav-h) + var(--tt-gap) + env(safe-area-inset-bottom, 0px));
 }
 .overlay:has(.tt) .modal { max-height: min(72vh, 680px); }
 @keyframes fade { from { opacity: 0 } }
@@ -1722,7 +1727,7 @@ table.data.peek td.hit {
     자기 나름의 새로고침을 끼워 넣는 것(안드로이드 크롬)을 끕니다. */
 html:has(body.att-page), body.att-page { overscroll-behavior-y: contain; }
 
-/* ── «공사중» 표시 ──────────────────────────────────────── */
+/* ── 탭 뱃지 («공사중» 같은 표시가 필요할 때) ─────────── */
 .nav-tag {
   margin-left: 5px; padding: 1px 6px; border-radius: 999px;
   font-size: 10px; font-weight: 700; letter-spacing: -.2px; vertical-align: 1.5px;
@@ -1734,26 +1739,6 @@ html:has(body.att-page), body.att-page { overscroll-behavior-y: contain; }
   background: color-mix(in srgb, var(--warning) 88%, var(--surface));
   color: #241a00; border-color: transparent;
 }
-.att-wip {
-  display: flex; align-items: flex-start; gap: 9px;
-  margin: 0 0 10px; padding: 9px 13px; border-radius: 12px;
-  font-size: 12.5px; line-height: 1.6; color: var(--text-secondary);
-  background: color-mix(in srgb, var(--warning) 13%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--warning) 36%, var(--border));
-}
-.att-wip-t {
-  flex: none; margin-top: 1px; padding: 1px 8px; border-radius: 999px;
-  font-size: 11px; font-weight: 700; white-space: nowrap;
-  background: color-mix(in srgb, var(--warning) 88%, var(--surface)); color: #241a00;
-}
-.att-wip b { color: var(--text-primary); font-weight: 650; }
-.att-wip-x {
-  flex: none; margin: -2px -4px 0 0; width: 24px; height: 24px; border-radius: 999px;
-  border: 0; background: transparent; cursor: pointer; font-size: 11px; line-height: 1;
-  color: color-mix(in srgb, var(--warning) 58%, var(--text-secondary));
-}
-.att-wip-x:hover { background: color-mix(in srgb, var(--warning) 22%, transparent); }
-@media print { .att-wip { display: none !important; } }
 
 /* ── 사용법 안내 ────────────────────────────────────────── */
 /* 안내 창 */
@@ -1884,10 +1869,11 @@ html:has(body.att-page), body.att-page { overscroll-behavior-y: contain; }
 .tt-dots i.on.done { background: var(--good); }
 
 .tt-nav {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
+  position: fixed; left: 0; right: 0; z-index: 61;
+  bottom: calc(var(--tt-gap, 20px) + env(safe-area-inset-bottom, 0px));
   display: grid; justify-items: center; gap: 8px;
-  height: 86px; align-content: start;
-  padding: 14px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+  height: var(--tt-nav-h, 72px); align-content: start;
+  padding: 14px 16px 0;
   pointer-events: none;
 }
 .tt-nav > * { pointer-events: auto; }
@@ -2051,6 +2037,17 @@ html:has(body.att-page), body.att-page { overscroll-behavior-y: contain; }
 
 /* ── 최근에 왔던 아이 (골라서 오늘 출석으로) ─────────────── */
 .att-past { margin-top: 10px; }
+/*  ＋ 창 안에서 «전에 왔던 아이» 를 먼저 보여 주는 칸 */
+.att-again {
+  margin: -2px 0 14px; padding: 10px 12px 12px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--grid);
+}
+.att-again-h {
+  display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; margin-bottom: 8px;
+  font-size: 12.5px; font-weight: 650; color: var(--text-secondary);
+}
+.att-again-h small { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.att-again .att-chips { gap: 7px; }
 .att-past-h {
   display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
   padding: 2px 2px 5px; margin-bottom: 7px;

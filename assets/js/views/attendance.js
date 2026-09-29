@@ -29,7 +29,6 @@ let syncedAt = 0;              // 마지막으로 서버와 맞춘 시각
 let live = false;              // 실시간 연결이 살아 있는가
 let redraw = null;             // 화면 다시 그리기 (app.js 가 넘겨 준 것)
 let tourQueued = false;        // 처음 오신 분께 사용법을 한 번만 띄우기 위한 표시
-let wipHidden = false;         // «공사중» 안내를 이번에만 접어 둔 상태 (다시 들어오면 또 뜹니다)
 let openMemos = new Set();     // 펼쳐 둔 심방 칸 (저장해도 닫히지 않게)
 let holdRender = false;        // 당겨서 새로고침하는 동안엔 화면을 갈아엎지 않습니다
 let pendingRender = false;     //  (다 끝나고 판이 접힌 뒤에 한 번만 다시 그립니다)
@@ -40,7 +39,6 @@ export function stopWatch() {
   if (syncTick) { clearInterval(syncTick); syncTick = null; }
   if (unwatch) { try { unwatch(); } catch { /* 이미 끊김 */ } unwatch = null; }
   live = false;
-  wipHidden = false;             // 다시 들어오면 «공사중» 안내를 또 보여 드립니다
   openMemos = new Set();
   document.body.classList.remove("att-page");
 }
@@ -179,11 +177,6 @@ export function html() {
 
   return `
   <div class="att" id="att">
-    ${wipHidden ? "" : `<div class="att-wip">
-      <span class="att-wip-t">공사중</span>
-      <span>아직 만들고 있는 화면입니다 — <b>정식으로 쓰기 전까지는 기록이 지워질 수 있어요.</b></span>
-      <button type="button" class="att-wip-x" id="attWipX" aria-label="이 안내 닫기">✕</button>
-    </div>`}
     <div class="att-pull" id="attPull">
       <div class="att-pull-in">
         <div class="att-ring" id="attRing">
@@ -427,9 +420,6 @@ export function mount(root, rerender) {
       rerender();
     } catch (e) { b.classList.remove("on"); toast(e.message, "err"); }
   }));
-  //  «공사중» 안내는 ✕ 로 접어 둘 수 있습니다. 다만 아직 공사 중이니,
-  //  화면을 나갔다 다시 들어오면 또 한 번 보여 드립니다.
-  root.querySelector("#attWipX")?.addEventListener("click", () => { wipHidden = true; rerender(); });
   root.querySelector("#attHelp2")?.addEventListener("click", () => openTour());
   //  처음 들어오신 분께는 사용법이 저절로 한 번 열립니다.
   //  («사용법 보기» 단추는 화면 맨 아래에 있어서, 반짝여도 눈에 띄지 않기 때문입니다.
@@ -1091,9 +1081,20 @@ export function guestForm(g, after) {
   const isNew = !g?.id;
   const v = { name: "", gender: "", grade: "", school: "", phone: "",
               guardian: "", invited_by: "", note: "", ...(g || {}) };
+  //  전에 왔던 아이를 또 적지 않도록, 이름 칸 위에 먼저 보여 줍니다.
+  const again = isNew ? recentGuests() : [];
   const form = document.createElement("form");
   form.id = "guestForm";
   form.innerHTML = `
+    ${again.length ? `<div class="att-again">
+      <div class="att-again-h">전에 왔던 아이 <small>누르면 새로 적지 않아도 바로 출석</small></div>
+      <div class="att-chips">
+        ${again.map((g) => `<button type="button" class="att-chip att-chip-g att-chip-past"
+            data-again="${g.id}">${esc(g.name)}
+            <i class="att-when-s">${esc(dateShort(state.guestLastOn[g.id] || g.first_on))}</i>
+          </button>`).join("")}
+      </div>
+    </div>` : ""}
     <div class="field">
       <label>이름 <b style="color:var(--critical)">*</b></label>
       <input name="name" required value="${esc(v.name)}" placeholder="아이 이름" autocomplete="off">
@@ -1135,6 +1136,17 @@ export function guestForm(g, after) {
              <button class="btn" data-close>취소</button>
              <button class="btn btn-primary" form="guestForm" type="submit">저장</button>`,
     onMount(box, close) {
+      box.querySelectorAll("[data-again]").forEach((btn) => btn.addEventListener("click", async () => {
+        const gg = state.attendGuests.find((x) => x.id === btn.dataset.again);
+        if (!gg) return;
+        try {
+          await ensureEvent();
+          const m = await api.markGuest(ev.id, gg.id, { present: true });
+          marks.set(gg.id, m);
+          buzz(24);
+          close(); toast(`${gg.name} — 오늘 출석으로 넣었습니다.`); after?.();
+        } catch (err) { toast(err.message, "err"); }
+      }));
       box.querySelector("#gDel")?.addEventListener("click", async () => {
         if (!(await confirmDialog(`«${g.name}» 을(를) 출석부에서 지울까요?\n` +
                                   `지금까지의 출석 기록도 함께 사라집니다.`))) return;
@@ -1151,6 +1163,8 @@ export function guestForm(g, after) {
         ["name", "gender", "grade", "school", "phone", "guardian", "invited_by", "note"]
           .forEach((k) => { row[k] = String(f.get(k) || "").trim() || null; });
         if (!row.name) { toast("이름을 적어 주세요.", "err"); return; }
+        //  지난 주일을 뒤늦게 적을 수도 있어서, «처음 온 날» 은 오늘이 아니라 그 모임 날짜로 둡니다
+        if (isNew) row.first_on = target.held_on;
         try {
           await ensureEvent();
           const saved = await api.saveGuest(row);

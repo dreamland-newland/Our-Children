@@ -493,6 +493,13 @@ async function paneNotify(pane) {
   draw();
 }
 
+/** 계정 한 줄에 붙는 동그라미.
+ *  명부(교사·간사)에 연결된 계정이면 그분 사진을, 아니면 이름 두 글자를 보여 줍니다.
+ *  사진은 비공개 버킷이라 로그인한 교사진에게만 잠깐 유효한 링크로 옵니다. */
+function accountAvatar(r, size = 34) {
+  return avatar(r.teacher_name || r.name, r.teacher_id ? teacherPhotoOf(r.teacher_id) : null, size);
+}
+
 // ── 가입 승인 · 계정 · 관리자 권한 ──────────────────────────
 async function paneAccounts(pane, after) {
   let rows = [], pool = [];
@@ -531,7 +538,7 @@ async function paneAccounts(pane, after) {
         ${pending.map((r) => `
         <div style="display:flex;align-items:center;gap:11px;padding:12px 14px;
                     border-bottom:1px solid var(--grid);flex-wrap:wrap">
-          ${avatar(r.name, null, 34)}
+          ${accountAvatar(r, 34)}
           <div style="min-width:130px;flex:1">
             <div style="font-size:14px;font-weight:620">${esc(r.name)}
               ${r.teacher_name ? `<span class="badge blue" style="margin-left:4px"
@@ -558,7 +565,7 @@ async function paneAccounts(pane, after) {
         ${live.map((r) => `
         <div style="display:flex;align-items:center;gap:11px;padding:11px 14px;
                     border-bottom:1px solid var(--grid);flex-wrap:wrap">
-          ${avatar(r.name, null, 34)}
+          ${accountAvatar(r, 34)}
           <div style="min-width:130px;flex:1">
             <div style="font-size:14px;font-weight:620">
               ${esc(r.name)} <span style="font-weight:400;color:var(--text-muted)">${esc(r.role)}</span>

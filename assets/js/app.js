@@ -18,9 +18,8 @@ import { initInstallPrompt, nudgeInstallPrompt } from "./pwa.js";
 const ROUTES = {
   // «개요»는 화면 목록(위 채널)에는 두지 않습니다 — 왼쪽 위 로고를 누르면 바로 옵니다.
   "/":          { title: "개요",       view: { html: overview.overviewView, mount: overview.mount } },
-  //  «공사중» — 아직 시험 중인 화면에는 tag 를 달아 둡니다. 다 되면 이 한 칸만 지우면 됩니다.
-  "/attend":    { title: "출석부",     nav: "출석부",    view: attendance, staffOnly: true, group: "attend",
-                  tag: "공사중" },
+  //  아직 시험 중인 화면에는 tag: "공사중" 을 달아 둘 수 있습니다. (출석부는 2026-09-29 정식 사용 시작)
+  "/attend":    { title: "출석부",     nav: "출석부",    view: attendance, staffOnly: true, group: "attend" },
   "/students":  { title: "주소록",     nav: "주소록",    view: students,  group: "roster" },
   "/cells":     { title: "셀편성",     nav: "셀편성",    view: cells,     group: "roster" },
   "/birthdays": { title: "생일",       nav: "생일",      view: birthdays, group: "roster" },
