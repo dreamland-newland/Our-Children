@@ -2,7 +2,7 @@
 //  앱 진입점 — 라우터와 상단바
 // ============================================================
 import { initData, api, state, isConfigured, isLoggedIn, isAdmin, teacherPhotoOf } from "./data.js";
-import { esc, toast, confirmDialog, installTelCopy, startSearchClear, avatar } from "./ui.js";
+import { esc, toast, confirmDialog, installTelCopy, startSearchClear, startPhotoFrames, avatar } from "./ui.js";
 import * as overview from "./views/overview.js";
 import * as students from "./views/students.js";
 import * as attendance from "./views/attendance.js";
@@ -367,6 +367,8 @@ function renderBanner() {
   installTelCopy();
   //  모든 검색칸에 «✕ 지우기» 를 붙여 둡니다 (나중에 생기는 것까지)
   startSearchClear();
+  //  4:5 틀로 자른 사진은 동그라미에서 얼굴만 크게 보이도록 표시를 달아 둡니다
+  startPhotoFrames();
   installTopButton();
   registerServiceWorker();
   initInstallPrompt();

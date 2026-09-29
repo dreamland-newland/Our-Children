@@ -5,7 +5,7 @@
 //    옆으로 누운 사진도 «어느 쪽이 위인지» 함께 알려 줍니다.
 //  · 얼굴을 못 찾으면 null 을 돌려줍니다 (그럴 땐 사람이 직접 맞추면 됩니다).
 // ============================================================
-import { loadScript, drawScaled, PHOTO_MAX, PHOTO_MIN, PHOTO_Q } from "./ui.js";
+import { loadScript, drawScaled, PHOTO_MAX, PHOTO_MIN, PHOTO_Q, FRAME } from "./ui.js";
 
 /** 찾을 때 쓰는 그림 크기 — 크면 잘 찾지만 느립니다 */
 const WORK_PX = 640;
@@ -93,8 +93,26 @@ export function faceCropRect(hit, tight = FACE_TIGHTNESS) {
   };
 }
 
+/** 찾은 얼굴을 «4:5 틀» 의 점선 타원(정수리~턱)에 맞추는 자리 (돌린 뒤 그림 기준).
+ *  얼굴 찾기가 잡는 네모는 «이마 가운데 ~ 턱» 쯤이라, 정수리까지 위로 넉넉히 늘려 잡습니다. */
+export function faceFrameRect(hit) {
+  const { box, width, height } = hit;
+  const headH = box.h * 1.44;                 // 정수리 ~ 턱
+  const headCy = box.y + box.h * 0.30;        // 머리 한가운데 (= 눈 높이)
+  let w = headH / (2 * FRAME.head.ry);
+  let h = w * FRAME.ratio;
+  const k = Math.min(1, width / w, height / h);   // 사진보다 크면 사진 안으로 줄입니다
+  w *= k; h *= k;
+  const cx = box.x + box.w / 2;
+  return {
+    w, h,
+    x: Math.min(Math.max(0, cx - w * FRAME.head.cx), width - w),
+    y: Math.min(Math.max(0, headCy - w * FRAME.head.cy), height - h),
+  };
+}
+
 /**
- * 사진 한 장을 «얼굴에 맞춰» 정사각형으로 잘라 줍니다 (엑셀로 한꺼번에 올릴 때).
+ * 사진 한 장을 «얼굴에 맞춰» 4:5 틀로 잘라 줍니다 (엑셀로 한꺼번에 올릴 때).
  * · 얼굴이 하나만 또렷하게 잡힐 때만 잘라 주고, 못 찾거나 여러 명이면 null 을 돌려줍니다.
  *   (단체사진에서 누구 얼굴인지는 앱이 알 수 없으니 사람이 정하는 게 맞습니다)
  */
@@ -106,13 +124,13 @@ export async function autoFaceCrop(blob, { size = PHOTO_MAX, quality = PHOTO_Q, 
     const hit = await findFace(bitmap);
     if (!hit || hit.count > maxFaces) return null;
     const { cv } = rotatedCanvas(bitmap, bitmap.width, bitmap.height, hit.deg, 0);
-    const r = faceCropRect(hit);
+    const r = faceFrameRect(hit);
     // 원본에서 실제로 쓰는 픽셀만큼 저장합니다 (있는 화질을 버리지도, 억지로 늘리지도 않게)
-    const px = Math.round(Math.min(size, Math.max(PHOTO_MIN, r.size)));
+    const pw = Math.round(Math.min(size, Math.max(PHOTO_MIN, r.w)));
     const out = document.createElement("canvas");
-    out.width = out.height = px;
+    out.width = pw; out.height = Math.round(pw * FRAME.ratio);
     const c = out.getContext("2d");
-    drawScaled(c, cv, r.x, r.y, r.size, r.size, px, px);
+    drawScaled(c, cv, r.x, r.y, r.w, r.h, out.width, out.height);
     return await new Promise((res) => out.toBlob((b) => res(b || null), "image/jpeg", quality));
   } finally { bitmap.close?.(); }
 }

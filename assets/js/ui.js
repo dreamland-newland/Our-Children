@@ -445,8 +445,9 @@ export function donutChart(rows, { size = 176, thickness = 24, mid = "", midSub 
 }
 
 /** 도넛 옆에 붙는 이름표 — 색만으로 구분하지 않도록 숫자를 꼭 같이 적습니다 */
-export function donutLegend(rows) {
-  const total = rows.reduce((a, x) => a + x.value, 0) || 1;
+export function donutLegend(rows, total = rows.reduce((a, x) => a + x.value, 0)) {
+  total = total || 1;
+  if (!rows.length) return "";
   return `<div class="dn-keys">${rows.map((r) => `
     <div class="dn-key">
       <i style="background:${r.color}"></i>
@@ -616,6 +617,32 @@ export const PHOTO_MAX = 800;      // 잘라서 저장하는 프로필 사진의
 export const PHOTO_MIN = 240;      // 이보다 작게는 만들지 않습니다
 export const PHOTO_SOFT = 400;     // 원본 픽셀이 이보다 적으면 «흐려집니다» 라고 알려 줍니다
 export const PHOTO_Q = 0.92;       // JPEG 품질 (0.85 → 0.92 로 올렸습니다)
+
+/** 프로필 사진 한 장의 «틀» — 세로 4:5.
+ *  · 네모 전체는 신상 창 맨 위에 그대로 쓰입니다 (머리 위 조금 + 목 · 어깨까지).
+ *  · 동그라미(목록·사진첩)는 그 안에서 «얼굴 부분만» 크게 당겨 씁니다.
+ *  숫자는 모두 «사진 너비(W)» 를 1 로 본 값이고, style.css 의 .ava img.pt 와 짝입니다.
+ *  (여기를 바꾸면 style.css 도 같이 바꿔야 동그라미가 얼굴에 맞습니다) */
+export const FRAME = {
+  ratio: 1.25,                                        // 높이 = 너비 × 1.25
+  head:   { cx: 0.5, cy: 0.45, rx: 0.225, ry: 0.30 }, // 정수리~턱 타원 (눈은 한가운데)
+  circle: { cx: 0.5, cy: 0.45, d: 0.72 },             // 동그라미로 쓰는 부분
+};
+/** 이 사진이 «4:5 틀» 로 자른 사진인가 (예전에 정사각형으로 자른 사진과 구별) */
+export const isFramed = (w, h) => w > 0 && h > 0 && Math.abs(w / h - 1 / FRAME.ratio) < 0.006;
+
+/** 화면에 뜬 사진마다 «4:5 틀인지» 표시를 달아 둡니다 — 동그라미가 얼굴만 크게 당기도록.
+ *  사진이 다 불러와진 뒤에야 크기를 알 수 있어서, 불러오기가 끝날 때마다 살핍니다. */
+function tagFrame(img) {
+  if (img.naturalWidth) img.classList.toggle("pt", isFramed(img.naturalWidth, img.naturalHeight));
+}
+export function startPhotoFrames() {
+  document.addEventListener("load", (e) => {
+    const t = e.target;
+    if (t?.tagName === "IMG" && t.closest?.(".ava, .dtl-hero, .photo-view")) tagFrame(t);
+  }, true);
+  document.querySelectorAll(".ava img, .dtl-hero img").forEach((i) => i.complete && tagFrame(i));
+}
 //   ※ 원본에 있는 픽셀보다 «크게» 만들어 봐야 선명해지지 않고 용량만 커집니다.
 //      그래서 잘라낸 부분의 실제 픽셀 수를 그대로 쓰되, 위 범위 안으로만 둡니다.
 
@@ -696,10 +723,12 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
   const releaseOriginal = src.release;           // 창을 닫을 때 원본 비트맵을 놓아 줍니다
 
   return new Promise((resolve) => {
-    // 자를 네모(=보이는 창)의 크기. PC 는 넉넉하게, 휴대폰은 화면 폭에 꽉 차게.
+    // 자를 틀(=보이는 창)의 크기 — 세로 4:5. PC 는 넉넉하게, 휴대폰은 화면 폭에 맞춰.
     const wide = window.innerWidth >= 720;
-    const V = wide ? 420
-      : Math.round(Math.max(240, Math.min(window.innerWidth - 40, window.innerHeight * 0.9 - 320, 460)));
+    const V = wide ? 372
+      : Math.round(Math.max(220, Math.min(window.innerWidth - 40,
+                                          (window.innerHeight * 0.9 - 250) / FRAME.ratio, 420)));
+    const VH = Math.round(V * FRAME.ratio);
     const MAXZ = 12;                    // 최대 12배까지 당길 수 있습니다
     let fitZ = 1;                       // 사진이 네모를 꼭 채우는 배율 (= 100%)
     let z = 1, tx = 0, ty = 0;          // 지금 배율과 사진의 위치
@@ -709,10 +738,9 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
     wrap.className = "crop-wrap";
     wrap.innerHTML = `
       <div class="crop-stage">
-        <div class="crop-view" id="cropView" style="width:${V}px;height:${V}px">
+        <div class="crop-view" id="cropView" style="width:${V}px;height:${VH}px">
           <img id="cropImg" alt="" draggable="false">
-          <div class="crop-guide"></div>
-          <div class="crop-guide-rect"></div>
+          ${frameGuideSvg()}
         </div>
       </div>
       <div class="crop-panel">
@@ -745,12 +773,13 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
         </div>
 
         <div class="crop-hint">
-          사진을 <b>끌어서</b> 옮기고, 슬라이더로 키우거나 줄이세요.
+          <b>머리를 점선 사람 모양에 맞춰</b> 주세요.
           <div class="crop-legend">
-            <span><i class="lg-c"></i>동그라미 — 목록·사진첩에 쓰입니다</span>
-            <span><i class="lg-r"></i>세로 네모 — 신상 창 맨 위에 쓰입니다</span>
+            <span><i class="lg-h"></i>점선 타원 — <b>정수리부터 턱까지</b>, 눈은 양옆 눈금 높이</span>
+            <span><i class="lg-c"></i>동그라미 — 목록·사진첩 (얼굴만 크게)</span>
+            <span><i class="lg-r"></i>네모 전체 — 신상 창 맨 위 (목·어깨까지)</span>
           </div>
-          <b>둘 안에 얼굴이 다 들어오게</b> 맞춰 주세요.
+          사진을 <b>끌어서</b> 옮기고, 슬라이더로 키우거나 줄이세요.
           <div class="dim">퍼센트를 누르면 직접 적을 수 있습니다 ·
             컴퓨터 <b>Ctrl(⌘)+휠</b> · 휴대폰 <b>두 손가락</b></div>
         </div>
@@ -761,13 +790,13 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
     const rangeEl = wrap.querySelector("#zRange");
     let pctEl = wrap.querySelector("#zPct");
 
-    /** 사진이 네모를 늘 덮도록 위치를 붙잡아 둡니다 (빈 곳이 생기지 않게) */
+    /** 사진이 틀을 늘 덮도록 위치를 붙잡아 둡니다 (빈 곳이 생기지 않게) */
     const clamp = () => {
       const w = src.width * z, h = src.height * z;
       tx = w <= V ? (V - w) / 2 : Math.min(0, Math.max(V - w, tx));
-      ty = h <= V ? (V - h) / 2 : Math.min(0, Math.max(V - h, ty));
+      ty = h <= VH ? (VH - h) / 2 : Math.min(0, Math.max(VH - h, ty));
     };
-    /** 지금 네모 안에 들어오는 «원본 픽셀» 수 (한 변) — 이게 곧 사진의 선명함입니다 */
+    /** 지금 틀 안에 들어오는 «원본 픽셀» 수 (가로) — 이게 곧 사진의 선명함입니다 */
     const srcPixels = () => V / z;
     const apply = () => {
       clamp();
@@ -783,7 +812,7 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
         : "눌러서 직접 적기";
     };
     /** ax, ay (네모 안 좌표) 를 붙잡은 채 배율만 바꿉니다 */
-    const setZoom = (nz, ax = V / 2, ay = V / 2) => {
+    const setZoom = (nz, ax = V / 2, ay = VH / 2) => {
       nz = Math.min(fitZ * MAXZ, Math.max(fitZ, nz));
       const ix = (ax - tx) / z, iy = (ay - ty) / z;
       z = nz;
@@ -792,10 +821,10 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
     };
     /** 사진 전체가 네모를 꼭 채우는 «처음 크기» 로 */
     const fitAll = () => {
-      fitZ = Math.max(V / src.width, V / src.height);
+      fitZ = Math.max(V / src.width, VH / src.height);
       z = fitZ;
       tx = (V - src.width * z) / 2;
-      ty = (V - src.height * z) / 2;
+      ty = (VH - src.height * z) / 2;
       apply();
     };
     const showSrc = () => {
@@ -867,7 +896,7 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
       const label = btn.textContent;
       btn.textContent = "찾는 중…";
       try {
-        const { findFace, faceCropRect } = await import("./face.js");
+        const { findFace, faceFrameRect } = await import("./face.js");
         const hit = await findFace(src.bitmap, { width: src.width, height: src.height });
         if (!hit) {
           toast("얼굴을 자동으로 찾지 못했습니다. 직접 맞춰 주세요.", "err");
@@ -877,8 +906,9 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
           const turns = hit.deg === 270 ? [-1] : hit.deg === 180 ? [1, 1] : [1];
           for (const d of turns) rotate(d);
         }
-        const r = faceCropRect(hit);
-        z = V / r.size;
+        //  찾은 얼굴을 점선 타원에 맞춥니다 (정수리~턱이 타원 안에)
+        const r = faceFrameRect(hit);
+        z = Math.max(fitZ, V / r.w);
         tx = -r.x * z; ty = -r.y * z;
         apply();
         toast(hit.count > 1 ? `얼굴 ${hit.count}명 중 가장 큰 얼굴에 맞췄습니다.` : "얼굴에 맞췄습니다.");
@@ -936,12 +966,13 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
           //  · 넉넉하면 그대로(최대 size) — 있는 화질을 버리지 않습니다
           //  · 많이 당겨서 픽셀이 모자라면 억지로 늘리지 않고 그 크기로 (최소 PHOTO_MIN)
           const region = srcPixels();
-          const out = Math.round(Math.max(PHOTO_MIN, Math.min(size, region)));
+          const outW = Math.round(Math.max(PHOTO_MIN, Math.min(size, region)));
+          const outH = Math.round(outW * FRAME.ratio);
           const cv = document.createElement("canvas");
-          cv.width = cv.height = out;
+          cv.width = outW; cv.height = outH;
           const ctx = cv.getContext("2d");
-          // 지금 네모 안에 보이는 부분이 그대로 사진이 됩니다
-          drawScaled(ctx, src.bitmap, -tx / z, -ty / z, region, region, out, out);
+          // 지금 틀 안에 보이는 부분이 그대로 사진이 됩니다 (세로 4:5)
+          drawScaled(ctx, src.bitmap, -tx / z, -ty / z, V / z, VH / z, outW, outH);
           cv.toBlob((blob) => {
             done = true; releaseOriginal?.(); close(); resolve(blob || null);
           }, "image/jpeg", quality);
@@ -955,6 +986,26 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
       if (!done) { releaseOriginal?.(); resolve(null); }
     }, 200);
   });
+}
+
+/** 자르기 틀 위에 겹쳐 그리는 안내선 (좌표는 너비 100 · 높이 125 기준)
+ *  · 점선 사람 모양 — 머리(정수리~턱)와 목·어깨가 올 자리
+ *  · 양옆 눈금 — 눈 높이 (머리 한가운데)
+ *  · 흰 동그라미 — 목록·사진첩 동그라미로 쓰이는 부분 */
+function frameGuideSvg() {
+  const H = FRAME.head, C = FRAME.circle;
+  const cx = H.cx * 100, cy = H.cy * 100, rx = H.rx * 100, ry = H.ry * 100;
+  const chin = cy + ry;
+  return `
+  <svg class="crop-frame" viewBox="0 0 100 125" preserveAspectRatio="none" aria-hidden="true">
+    <circle class="cf-circle" cx="${C.cx * 100}" cy="${C.cy * 100}" r="${(C.d * 100) / 2}"></circle>
+    <ellipse class="cf-head" cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"></ellipse>
+    <path class="cf-body" d="M${cx - 8} ${chin - 1.5} L${cx - 8.5} ${chin + 9}
+      C${cx - 20} ${chin + 11} ${cx - 38} ${chin + 17} ${cx - 42} 125
+      M${cx + 8} ${chin - 1.5} L${cx + 8.5} ${chin + 9}
+      C${cx + 20} ${chin + 11} ${cx + 38} ${chin + 17} ${cx + 42} 125"></path>
+    <path class="cf-eye" d="M${cx - rx - 6} ${cy} h4.5 M${cx + rx + 1.5} ${cy} h4.5"></path>
+  </svg>`;
 }
 
 /** 회전 정보(EXIF)를 반영해 똑바로 세운 이미지 */

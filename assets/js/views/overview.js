@@ -98,19 +98,25 @@ export function overviewView() {
     </div>
   </section>
 
+  ${cellSection()}
+
   <div class="grid grid-2" style="margin-bottom:16px">
     <section class="card">
       <div class="card-head"><h3>학년별 인원</h3><span class="sub">재적 ${active.length}명</span></div>
       <div class="card-pad dn-wrap">
         ${gradeRows.length
-          ? donutChart(gradeRows, { mid: active.length, midSub: "재적" }) + donutLegend(gradeRows)
+          ? donutChart(gradeRows, { size: 156, thickness: 22, mid: active.length, midSub: "재적" })
+            + `<div class="dn-keys2">
+                 ${donutLegend(gradeRows.filter((r) => !r.label.startsWith("고")), active.length)}
+                 ${donutLegend(gradeRows.filter((r) => r.label.startsWith("고")), active.length)}
+               </div>`
           : `<div class="empty" style="padding:28px 0">아직 등록된 아이가 없습니다.</div>`}
       </div>
     </section>
 
     <section class="card">
       <div class="card-head"><h3>이번 달 생일</h3><span class="sub">${thisMonth}월 · ${bdays.length}명 <a class="more" href="#/birthdays">자세히 →</a></span></div>
-      <div class="card-pad bday-list">
+      <div class="card-pad bday-list${bdays.length > 4 ? " two" : ""}">
         ${bdays.length ? `<ul>${bdays.map((b) => `
           <li class="${b.day === today ? "now" : ""}">
             <span class="d">${b.day}</span>
@@ -123,8 +129,6 @@ export function overviewView() {
       </div>
     </section>
   </div>
-
-  ${cellSection()}
 
   <div class="grid grid-2" style="margin-bottom:16px">
     <section class="card">
@@ -146,14 +150,15 @@ export function overviewView() {
     </section>
 
     <section class="card">
-      <div class="card-head"><h3>교사 · 간사</h3><span class="sub">${teacherCount}명 <a class="more" href="#/teachers">자세히 →</a></span></div>
+      <div class="card-head"><h3>교사진 구성</h3><span class="sub">직분별 인원 · ${teacherCount}명 <a class="more" href="#/teachers">연락처 →</a></span></div>
       <div class="card-pad">
         ${barChart(["담임목사", "교역자", "사모", "교사", "간사"]
           .map((r) => ({ label: r, value: state.teachers.filter((t) => t.role === r).length }))
           .filter((r) => r.value), { alt: true })}
         <p class="card-note">
-          ${claimed}명이 계정을 만들었습니다.
-          ${claimed < teacherCount ? `<a href="#/signup">회원가입 →</a>` : ""}
+          교역자 · 교사 · 간사가 각각 몇 분인지입니다.
+          ${teacherCount} 분 중 <b>${claimed}</b> 분이 교적부에 가입하셨어요.
+          ${claimed < teacherCount ? `<a href="#/signup">가입 안내 →</a>` : ""}
         </p>
       </div>
     </section>
@@ -191,7 +196,7 @@ function cellSection() {
   return `
   <section class="card cellsec" style="margin-bottom:16px">
     <div class="card-head">
-      <h3>셀별 현황</h3>
+      <h3>셀별 출결 현황</h3>
       <span class="sub">
         ${showAttend
           ? `${esc(dateLabel(rec.event.held_on))} ${esc(eventName(rec.event))} 기준 ·
@@ -207,9 +212,9 @@ function cellSection() {
         ${rows.map((r) => `
           <div class="cellg-r" title="${esc(r.name)} — ${showAttend ? `${r.total}명 중 ${r.on}명 왔습니다` : `${r.total}명`}">
             <span class="cellg-n">${esc(r.name)}</span>
-            ${dotGauge(showAttend ? r.on : 0, r.total)}
             <span class="cellg-v">${showAttend ? `<b>${r.on}</b><small>/${r.total}</small>`
                                                : `<b>${r.total}</b><small>명</small>`}</span>
+            ${dotGauge(showAttend ? r.on : 0, r.total)}
           </div>`).join("")}
       </div>
       <p class="card-note">
