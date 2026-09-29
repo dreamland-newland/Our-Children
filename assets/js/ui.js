@@ -617,6 +617,7 @@ export const PHOTO_MAX = 800;      // 잘라서 저장하는 프로필 사진의
 export const PHOTO_MIN = 240;      // 이보다 작게는 만들지 않습니다
 export const PHOTO_SOFT = 400;     // 원본 픽셀이 이보다 적으면 «흐려집니다» 라고 알려 줍니다
 export const PHOTO_Q = 0.92;       // JPEG 품질 (0.85 → 0.92 로 올렸습니다)
+export const ORIG_MAX = 1600;      // 다시 자르기용으로 함께 올리는 «원본» 의 긴 쪽 (최대)
 
 /** 프로필 사진 한 장의 «틀» — 세로 4:5.
  *  · 네모 전체는 신상 창 맨 위에 그대로 쓰입니다 (머리 위 조금 + 목 · 어깨까지).
@@ -626,7 +627,9 @@ export const PHOTO_Q = 0.92;       // JPEG 품질 (0.85 → 0.92 로 올렸습�
 export const FRAME = {
   ratio: 1.25,                                        // 높이 = 너비 × 1.25
   head:   { cx: 0.5, cy: 0.45, rx: 0.225, ry: 0.30 }, // 정수리~턱 타원 (눈은 한가운데)
-  circle: { cx: 0.5, cy: 0.45, d: 0.72 },             // 동그라미로 쓰는 부분
+  //  동그라미로 쓰는 부분 — 얼굴이 정가운데가 아니라 조금 위, 아래로 목까지 나오게.
+  //  (머리 꼭대기가 동그라미 위 7% 쯤, 턱이 70% 쯤, 그 아래로 목 · 어깨 조금)
+  circle: { cx: 0.5, cy: 0.555, d: 0.94 },
 };
 /** 이 사진이 «4:5 틀» 로 자른 사진인가 (예전에 정사각형으로 자른 사진과 구별) */
 export const isFramed = (w, h) => w > 0 && h > 0 && Math.abs(w / h - 1 / FRAME.ratio) < 0.006;
@@ -693,8 +696,17 @@ export function fitImage(file, max = 1400, quality = PHOTO_Q) {
  *  · src 는 사진 주소(문자열)나 아직 저장 전인 사진(Blob) 둘 다 됩니다.
  *  · 새로 파일을 고르지 않고도 위치·크기만 다시 맞출 수 있습니다.
  *  · 취소하면 null 을 돌려줍니다. */
-export async function recropStoredPhoto(src) {
+export async function recropStoredPhoto(src, { original } = {}) {
   if (!src) throw new Error("아직 사진이 없습니다.");
+  //  ① 방금 자른(아직 저장 전) 사진 — 원본이 붙어 있습니다
+  if (src instanceof Blob && src.original instanceof Blob)
+    return cropImage(src.original, { initial: src.crop });
+  //  ② 저장해 둔 사진 — 원본을 따로 불러옵니다 (지난번 자른 자리에서 열립니다)
+  if (original) {
+    const o = await original();
+    if (o?.blob) return cropImage(o.blob, { initial: o.crop });
+  }
+  //  ③ 원본이 없는 예전 사진 — 잘린 사진을 그대로 엽니다
   let blob = src;
   if (typeof src === "string") {
     try {
@@ -717,7 +729,7 @@ export async function recropStoredPhoto(src) {
  *  · 옆으로 누운 사진은 «↺ ↻» 로 돌려 세웁니다.
  *  · «적용» 을 누르면 그 부분만 잘린 JPEG 한 장이 나옵니다. 취소하면 null.
  */
-export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = {}) {
+export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q, initial = null } = {}) {
   if (!/^image\//.test(file.type)) throw new Error("이미지 파일만 올릴 수 있습니다.");
   let src = await loadUpright(file);             // 휴대폰 사진 회전 먼저 반영
   const releaseOriginal = src.release;           // 창을 닫을 때 원본 비트맵을 놓아 줍니다
@@ -834,6 +846,13 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
       fitAll();
     };
     showSrc();
+    //  다시 자르기 — 지난번에 자른 자리에서 시작합니다
+    if (initial && initial.w > 0) {
+      z = Math.min(fitZ * MAXZ, Math.max(fitZ, V / (initial.w * src.width)));
+      tx = -initial.x * src.width * z;
+      ty = -initial.y * src.height * z;
+      apply();
+    }
 
     /** 90° 돌리기 — dir 이 -1이면 왼쪽, +1이면 오른쪽 */
     const rotate = (dir) => {
@@ -973,8 +992,19 @@ export async function cropImage(file, { size = PHOTO_MAX, quality = PHOTO_Q } = 
           const ctx = cv.getContext("2d");
           // 지금 틀 안에 보이는 부분이 그대로 사진이 됩니다 (세로 4:5)
           drawScaled(ctx, src.bitmap, -tx / z, -ty / z, V / z, VH / z, outW, outH);
+          //  «원본» 도 한 장 같이 챙깁니다 (돌린 방향 그대로, 긴 쪽 ORIG_MAX 까지).
+          //  나중에 «다시 자르기» 를 누르면 이 원본에서, 지금 자른 자리 그대로 열립니다.
+          const crop = { x: (-tx / z) / src.width, y: (-ty / z) / src.height, w: (V / z) / src.width };
+          const k = Math.min(1, ORIG_MAX / Math.max(src.width, src.height));
+          const oc = document.createElement("canvas");
+          oc.width = Math.max(1, Math.round(src.width * k));
+          oc.height = Math.max(1, Math.round(src.height * k));
+          drawScaled(oc.getContext("2d"), src.bitmap, 0, 0, src.width, src.height, oc.width, oc.height);
           cv.toBlob((blob) => {
-            done = true; releaseOriginal?.(); close(); resolve(blob || null);
+            oc.toBlob((orig) => {
+              if (blob && orig) { blob.original = orig; blob.crop = crop; }
+              done = true; releaseOriginal?.(); close(); resolve(blob || null);
+            }, "image/jpeg", 0.9);
           }, "image/jpeg", quality);
         });
       },

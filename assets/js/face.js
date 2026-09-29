@@ -5,7 +5,7 @@
 //    옆으로 누운 사진도 «어느 쪽이 위인지» 함께 알려 줍니다.
 //  · 얼굴을 못 찾으면 null 을 돌려줍니다 (그럴 땐 사람이 직접 맞추면 됩니다).
 // ============================================================
-import { loadScript, drawScaled, PHOTO_MAX, PHOTO_MIN, PHOTO_Q, FRAME } from "./ui.js";
+import { loadScript, drawScaled, PHOTO_MAX, PHOTO_MIN, PHOTO_Q, FRAME, ORIG_MAX } from "./ui.js";
 
 /** 찾을 때 쓰는 그림 크기 — 크면 잘 찾지만 느립니다 */
 const WORK_PX = 640;
@@ -131,6 +131,15 @@ export async function autoFaceCrop(blob, { size = PHOTO_MAX, quality = PHOTO_Q, 
     out.width = pw; out.height = Math.round(pw * FRAME.ratio);
     const c = out.getContext("2d");
     drawScaled(c, cv, r.x, r.y, r.w, r.h, out.width, out.height);
-    return await new Promise((res) => out.toBlob((b) => res(b || null), "image/jpeg", quality));
+    const blob = await new Promise((res) => out.toBlob((b) => res(b || null), "image/jpeg", quality));
+    if (!blob) return null;
+    //  «다시 자르기» 할 수 있도록 세운 원본도 같이 붙여 둡니다
+    const k = Math.min(1, ORIG_MAX / Math.max(cv.width, cv.height));
+    const oc = document.createElement("canvas");
+    oc.width = Math.max(1, Math.round(cv.width * k)); oc.height = Math.max(1, Math.round(cv.height * k));
+    drawScaled(oc.getContext("2d"), cv, 0, 0, cv.width, cv.height, oc.width, oc.height);
+    const orig = await new Promise((res) => oc.toBlob((b) => res(b || null), "image/jpeg", 0.9));
+    if (orig) { blob.original = orig; blob.crop = { x: r.x / cv.width, y: r.y / cv.height, w: r.w / cv.width }; }
+    return blob;
   } finally { bitmap.close?.(); }
 }

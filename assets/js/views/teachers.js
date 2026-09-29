@@ -786,7 +786,9 @@ export function editTeacher(t, after, opts = {}) {
         btn.disabled = true;
         try {
           const { recropStoredPhoto } = await import("../ui.js");
-          const cropped = await recropStoredPhoto(pendingPhoto || teacherPhotoOf(t.id));
+          const cropped = await recropStoredPhoto(pendingPhoto || teacherPhotoOf(t.id),
+            //  저장해 둔 사진이면 «원본» 을 불러와 여백까지 다시 고를 수 있게 합니다
+            { original: pendingPhoto ? null : () => api.photoOriginal("teacher", t.id) });
           if (cropped) await showPending(cropped);
         } catch (err) { toast(err.message, "err"); }
         finally { btn.disabled = false; }

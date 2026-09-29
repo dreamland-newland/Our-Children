@@ -138,6 +138,27 @@ export const statusOf = (s) => {
 /** 지금 청소년부에 있는 아이인가 (졸업·전출 제외) */
 export const isActive = (s) => { const st = statusOf(s); return st === "재적" || st === "장기결석"; };
 
+// ── 사진 «원본» (다시 자르기용) ─────────────────────────────
+//  잘린 사진과 함께 원본을 한 장 더 올려 둡니다 — 그래야 다시 자를 때 여백이 남아 있습니다.
+//  «원본의 어느 부분을 잘랐는지» 는 잘린 사진 이름에 적어 둡니다 (표를 따로 만들지 않으려고요).
+//    잘린 사진:  <id>/<시각>.c<x>_<y>_<w>.jpg   (x·y·w 는 원본 가로·세로에 대한 비율)
+//    원본:       <id>/<시각>.orig.jpg
+//  이름에 이 표시가 없는 사진은 예전에 올린 것이라 원본이 없습니다 — 잘린 사진으로 다시 자릅니다.
+const CROP_RE = /^(.*\/(\d+))\.c([\d.]+)_([\d.]+)_([\d.]+)\.jpg$/;
+const cropTag = (c) => `.c${[c.x, c.y, c.w].map((v) => Math.max(0, Number(v) || 0).toFixed(4)).join("_")}`;
+export function parsePhotoPath(path) {
+  const m = CROP_RE.exec(path || "");
+  return m ? { orig: `${m[1]}.orig.jpg`, crop: { x: +m[3], y: +m[4], w: +m[5] } } : null;
+}
+/** 사진을 바꾸거나 지울 때 같이 치워야 할 파일들 (잘린 사진 + 원본) */
+const photoFiles = (path) => {
+  if (!path) return [];
+  const p = parsePhotoPath(path);
+  return p ? [path, p.orig] : [path];
+};
+/** 잘린 사진에 원본이 붙어 있는가 (ui.js 의 cropImage 가 붙여 줍니다) */
+const hasOriginal = (blob) => blob?.original instanceof Blob && !!blob.crop;
+
 /** 학생 id → 볼 수 있는 사진 주소 (비로그인이면 비어 있음) */
 export const photoUrls = new Map();
 export const photoOf = (studentId) => photoUrls.get(studentId) || null;
@@ -470,14 +491,11 @@ const supabaseAdapter = {
   },
 
   async uploadPhoto(studentId, blob) {
-    const path = `${studentId}/${Date.now()}.jpg`;
-    const up = await sb.storage.from(PHOTO_BUCKET)
-      .upload(path, blob, { contentType: "image/jpeg", upsert: true });
-    if (up.error) throw new Error(translate(up.error.message));
+    const path = await this._putPhoto(PHOTO_BUCKET, studentId, blob);
     const old = state.students.find((s) => s.id === studentId)?.photo_path;
     const { error } = await sb.from("students").update({ photo_path: path }).eq("id", studentId);
     if (error) throw new Error(translate(error.message));
-    if (old && old !== path) await sb.storage.from(PHOTO_BUCKET).remove([old]);
+    if (old && old !== path) await sb.storage.from(PHOTO_BUCKET).remove(photoFiles(old));
     return path;
   },
 
@@ -485,7 +503,35 @@ const supabaseAdapter = {
     const old = state.students.find((s) => s.id === studentId)?.photo_path;
     const { error } = await sb.from("students").update({ photo_path: null }).eq("id", studentId);
     if (error) throw new Error(translate(error.message));
-    if (old) await sb.storage.from(PHOTO_BUCKET).remove([old]);
+    if (old) await sb.storage.from(PHOTO_BUCKET).remove(photoFiles(old));
+  },
+
+  /** 잘린 사진(과 원본)을 올리고, 잘린 사진의 자리를 돌려줍니다.
+   *  원본을 먼저 올려서, 원본이 실패하면 «원본 있음» 표시 없이 잘린 사진만 올립니다. */
+  async _putPhoto(bucket, id, blob) {
+    const ts = Date.now();
+    let tag = "";
+    if (hasOriginal(blob)) {
+      const o = await sb.storage.from(bucket)
+        .upload(`${id}/${ts}.orig.jpg`, blob.original, { contentType: "image/jpeg", upsert: true });
+      if (!o.error) tag = cropTag(blob.crop);
+      else console.warn("원본 사진을 올리지 못했습니다 — 잘린 사진만 올립니다.", o.error);
+    }
+    const path = `${id}/${ts}${tag}.jpg`;
+    const up = await sb.storage.from(bucket).upload(path, blob, { contentType: "image/jpeg", upsert: true });
+    if (up.error) throw new Error(translate(up.error.message));
+    return path;
+  },
+
+  /** 다시 자르기용 원본 — 없으면 null (예전에 올린 사진) */
+  async photoOriginal(kind, id) {
+    const teacher = kind === "teacher";
+    const row = (teacher ? state.teachers : state.students).find((x) => x.id === id);
+    const p = parsePhotoPath(row?.photo_path);
+    if (!p) return null;
+    const { data, error } = await sb.storage.from(teacher ? TEACHER_PHOTO_BUCKET : PHOTO_BUCKET).download(p.orig);
+    if (error || !data) return null;
+    return { blob: /^image\//.test(data.type) ? data : new Blob([data], { type: "image/jpeg" }), crop: p.crop };
   },
 
   /** 비공개 버킷이라 로그인한 교사진에게만 잠깐 유효한 링크를 발급합니다. (교사·간사) */
@@ -501,14 +547,11 @@ const supabaseAdapter = {
   },
 
   async uploadTeacherPhoto(teacherId, blob) {
-    const path = `${teacherId}/${Date.now()}.jpg`;
-    const up = await sb.storage.from(TEACHER_PHOTO_BUCKET)
-      .upload(path, blob, { contentType: "image/jpeg", upsert: true });
-    if (up.error) throw new Error(translate(up.error.message));
+    const path = await this._putPhoto(TEACHER_PHOTO_BUCKET, teacherId, blob);
     const old = state.teachers.find((t) => t.id === teacherId)?.photo_path;
     const { error } = await sb.from("teachers").update({ photo_path: path }).eq("id", teacherId);
     if (error) throw new Error(translate(error.message));
-    if (old && old !== path) await sb.storage.from(TEACHER_PHOTO_BUCKET).remove([old]);
+    if (old && old !== path) await sb.storage.from(TEACHER_PHOTO_BUCKET).remove(photoFiles(old));
     return path;
   },
 
@@ -516,7 +559,7 @@ const supabaseAdapter = {
     const old = state.teachers.find((t) => t.id === teacherId)?.photo_path;
     const { error } = await sb.from("teachers").update({ photo_path: null }).eq("id", teacherId);
     if (error) throw new Error(translate(error.message));
-    if (old) await sb.storage.from(TEACHER_PHOTO_BUCKET).remove([old]);
+    if (old) await sb.storage.from(TEACHER_PHOTO_BUCKET).remove(photoFiles(old));
   },
 
   async listAccounts() {
@@ -959,19 +1002,31 @@ const demoAdapter = {
   async uploadPhoto(studentId, blob) {
     if (!state.profile) throw new Error("로그인이 필요합니다.");
     const { blobToDataURL } = await import("./ui.js");
-    demo.photos ||= {};
+    demo.photos ||= {}; demo.photoOrig ||= {};
     demo.photos[studentId] = await blobToDataURL(blob);
+    if (hasOriginal(blob)) demo.photoOrig[studentId] = { url: await blobToDataURL(blob.original), crop: blob.crop };
+    else delete demo.photoOrig[studentId];
     const st = demo.students.find((s) => s.id === studentId);
     if (st) st.photo_path = `demo/${studentId}`;
     try { this.persist(); }
-    catch { delete demo.photos[studentId]; throw new Error("브라우저 저장 공간이 가득 찼습니다. 데모 모드에서는 사진을 몇 장만 넣을 수 있어요."); }
+    catch {
+      delete demo.photos[studentId]; delete demo.photoOrig[studentId];
+      throw new Error("브라우저 저장 공간이 가득 찼습니다. 데모 모드에서는 사진을 몇 장만 넣을 수 있어요.");
+    }
     return st?.photo_path;
+  },
+
+  async photoOriginal(kind, id) {
+    const o = (kind === "teacher" ? demo.teacherPhotoOrig : demo.photoOrig)?.[id];
+    if (!o?.url) return null;
+    return { blob: await (await fetch(o.url)).blob(), crop: o.crop };
   },
 
   async removePhoto(studentId) {
     if (!state.profile) throw new Error("로그인이 필요합니다.");
     demo.photos ||= {};
     delete demo.photos[studentId];
+    if (demo.photoOrig) delete demo.photoOrig[studentId];
     const st = demo.students.find((s) => s.id === studentId);
     if (st) st.photo_path = null;
     this.persist();
@@ -980,8 +1035,10 @@ const demoAdapter = {
   async uploadTeacherPhoto(teacherId, blob) {
     if (!state.profile) throw new Error("로그인이 필요합니다.");
     const { blobToDataURL } = await import("./ui.js");
-    demo.teacherPhotos ||= {};
+    demo.teacherPhotos ||= {}; demo.teacherPhotoOrig ||= {};
     demo.teacherPhotos[teacherId] = await blobToDataURL(blob);
+    if (hasOriginal(blob)) demo.teacherPhotoOrig[teacherId] = { url: await blobToDataURL(blob.original), crop: blob.crop };
+    else delete demo.teacherPhotoOrig[teacherId];
     const t = demo.teachers.find((x) => x.id === teacherId);
     if (t) t.photo_path = `demo/${teacherId}`;
     try { this.persist(); }
@@ -993,6 +1050,7 @@ const demoAdapter = {
     if (!state.profile) throw new Error("로그인이 필요합니다.");
     demo.teacherPhotos ||= {};
     delete demo.teacherPhotos[teacherId];
+    if (demo.teacherPhotoOrig) delete demo.teacherPhotoOrig[teacherId];
     const t = demo.teachers.find((x) => x.id === teacherId);
     if (t) t.photo_path = null;
     this.persist();
@@ -1326,6 +1384,8 @@ export const api = {
   signOut: () => adapter.signOut(),
 
   uploadPhoto: (id, blob) => adapter.uploadPhoto(id, blob),
+  /** 다시 자르기용 원본 {blob, crop} — 예전 사진이라 없으면 null */
+  photoOriginal: (kind, id) => adapter.photoOriginal(kind, id).catch(() => null),
   removePhoto: (id) => adapter.removePhoto(id),
   saveStudent: (r) => adapter.save("students", r),
   saveStudents: (rows) => adapter.saveMany("students", rows),
