@@ -246,6 +246,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
 .page-head h1 { font-size: 24px; }
 .page-head p { margin: 4px 0 0; color: var(--text-secondary); font-size: 13.5px; }
 .page-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/*  개요는 제목 없이 요약 한 줄과 단추만 — 한 줄에 나란히 가운데 맞춤 */
+.ov-head { align-items: center; margin-bottom: 14px; }
+.ov-head p { margin: 0; }
 
 .card {
   background: var(--surface); border: 1px solid var(--border);
