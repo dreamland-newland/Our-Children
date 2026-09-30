@@ -917,7 +917,9 @@ a.tel { color: var(--series-1); }
 .dtl-hero {
   position: relative; flex: none; overflow: hidden;
   aspect-ratio: 4 / 5;                    /* 사진 틀과 같은 4:5 — 머리부터 목·어깨까지 그대로 */
-  height: auto; max-height: min(66vh, 560px);
+  /*  너비는 창에 꽉 채웁니다. (이게 없으면 화면이 낮을 때 높이 제한에 맞춰 너비까지 줄어들어
+      오른쪽에 빈 칸이 생깁니다) 높이가 모자라면 사진 위아래만 조금 잘립니다. */
+  width: 100%; height: auto; max-height: min(66vh, 560px);
   background: var(--surface-2);
 }
 .dtl-hero.tap { cursor: zoom-in; }
