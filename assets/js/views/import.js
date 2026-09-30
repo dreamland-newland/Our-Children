@@ -488,7 +488,7 @@ export function html() {
     </label>
     <label class="chk">
       <input type="checkbox" id="photoAutoFace" checked>
-      <span><b>얼굴을 찾아 자동으로 맞추기</b> (누운 사진은 세워서)</span>
+      <span><b>가운데 얼굴을 찾아 자동으로 맞추기</b> — 끄면 엑셀에서 잘라 둔 모양 그대로 올립니다</span>
     </label>
   </div>
 
@@ -717,7 +717,7 @@ async function handlePhotoFiles(fileList, root, rerender) {
       for (const item of extracted) {
         const hits = item.name ? pool.filter((p) => nameKey(p.name) === nameKey(item.name)) : [];
         rows.push({
-          file: file.name, sheet: item.sheet, name: item.name, blob: item.blob,
+          file: file.name, sheet: item.sheet, name: item.name, blob: item.blob, make: item.make,
           url: URL.createObjectURL(item.blob),
           chosenId: hits.length ? hits[0].id : null,
         });
@@ -755,7 +755,7 @@ function drawPhotoResult(root, rerender) {
         <tbody>
           ${photoRows.map((r, i) => `
           <tr>
-            <td><span class="ava" style="width:40px;height:40px"><img src="${r.url}" alt=""></span></td>
+            <td><span class="ava raw" style="width:56px;height:56px" title="엑셀에서 보이던 부분"><img src="${r.url}" alt=""></span></td>
             <td>${r.name ? esc(r.name) : '<span class="badge crit">이름을 못 찾음</span>'}
               <div style="font-size:11px;color:var(--text-muted)">${esc(r.sheet)} · ${esc(r.file)}</div></td>
             <td><select data-row="${i}" style="width:auto;max-width:220px">
@@ -798,20 +798,28 @@ async function applyPhotos(root, rerender) {
 
   const btn = root.querySelector("#applyPhotos");
   const autoFace = !!root.querySelector("#photoAutoFace")?.checked;
-  let autoCrop = null;
-  if (autoFace) {
-    try { ({ autoFaceCrop: autoCrop } = await import("../face.js")); }
-    catch (e) { console.error(e); }        // 준비가 안 되면 그냥 통째로 올립니다
-  }
+  let face = null;
+  try { face = await import("../face.js"); }
+  catch (e) { console.error(e); }          // 준비가 안 되면 그냥 통째로 올립니다
 
   let ok = 0, fail = 0, faced = 0;
   for (let i = 0; i < todo.length; i++) {
     if (btn) btn.textContent = `올리는 중… (${i + 1}/${todo.length})`;
     try {
-      // 1) 얼굴이 «한 명만» 또렷하게 잡히면 그 얼굴에 맞춰 자릅니다 (누운 사진은 세워서).
-      // 2) 못 찾거나 여러 명이면 자르지 않고 통째로 — 나중에 «다시 자르기» 로 고르시면 됩니다.
       let out = null;
-      if (autoCrop) { out = await autoCrop(todo[i].blob); if (out) faced++; }
+      if (todo[i].make && face?.framePhoto) {
+        //  엑셀 사진 대장 — 선생님이 잘라 둔 부분을 기준으로 4:5 틀에 맞춥니다.
+        //  얼굴 찾기를 켜 두면 «가운데 얼굴» 을 찾아 머리·목·어깨까지 원본에서 넉넉히 잡습니다.
+        //  단체사진 원본도 함께 올려 두니, 나중에 «다시 자르기» 로 얼마든지 다시 고를 수 있습니다.
+        const pic = await todo[i].make();
+        try {
+          const r = await face.framePhoto(pic.full, pic.vis, { useFace: autoFace });
+          out = r.blob; if (r.faced) faced++;
+        } finally { pic.release(); }
+      } else if (autoFace && face?.autoFaceCrop) {
+        // 사진 파일 그대로 올린 경우 — 얼굴이 «한 명만» 또렷하면 그 얼굴에 맞춥니다
+        out = await face.autoFaceCrop(todo[i].blob); if (out) faced++;
+      }
       if (!out) out = await fitImage(todo[i].blob, 1400);
       if (photoAsTeacher) await api.uploadTeacherPhoto(todo[i].chosenId, out);
       else await api.uploadPhoto(todo[i].chosenId, out);

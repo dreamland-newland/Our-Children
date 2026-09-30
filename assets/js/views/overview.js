@@ -60,6 +60,7 @@ export function overviewView() {
   return `
   <div class="page-head ov-head">
     <div>
+      <h1 class="sr-only">개요</h1>
       <p>총 ${S.length}명의 교적 · 셀편성 ${esc(versionLabel(currentVersion()) || "미등록")}</p>
     </div>
     <div class="page-actions">

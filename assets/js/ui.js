@@ -637,6 +637,7 @@ export const isFramed = (w, h) => w > 0 && h > 0 && Math.abs(w / h - 1 / FRAME.r
 /** 화면에 뜬 사진마다 «4:5 틀인지» 표시를 달아 둡니다 — 동그라미가 얼굴만 크게 당기도록.
  *  사진이 다 불러와진 뒤에야 크기를 알 수 있어서, 불러오기가 끝날 때마다 살핍니다. */
 function tagFrame(img) {
+  if (img.closest(".raw")) return;              // 가져오기 미리보기 — 엑셀에서 보이던 그대로 보여 줍니다
   if (img.naturalWidth) img.classList.toggle("pt", isFramed(img.naturalWidth, img.naturalHeight));
 }
 export function startPhotoFrames() {
